@@ -1,0 +1,43 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Test / build artifacts
+coverage
+html
+*.tsbuildinfo
+
+# Environment.
+#
+# `.env.example`, `.env.development`, `.env.test` and `.env.production` ARE
+# committed - they hold non-secret defaults so a fresh clone runs (and tests)
+# with no setup. Personal overrides go in `.env.local` / `.env.*.local`, which
+# are ignored below.
+# Never put a secret in any of them: Vite inlines VITE_* into the bundle.
+.env
+.env.local
+.env.*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Vercel
+.vercel

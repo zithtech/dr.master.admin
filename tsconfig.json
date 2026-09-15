@@ -1,0 +1,8 @@
+{
+  // Solution-style root config: it compiles nothing itself, it only points at
+  // the two real programs. App code and config/tooling code run in different
+  // environments (DOM vs Node) and must not share a `lib`/`types` set - that is
+  // how `document` ends up autocompleting inside vite.config.ts.
+  "files": [],
+  "references": [{ "path": "./tsconfig.app.json" }, { "path": "./tsconfig.node.json" }]
+}

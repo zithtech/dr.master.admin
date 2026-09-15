@@ -1,0 +1,55 @@
+{
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
+    "target": "es2023",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "types": ["vite/client"],
+    "allowArbitraryExtensions": true,
+    "skipLibCheck": true,
+
+    /* Bundler mode - Vite transpiles, tsc only type-checks. */
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "moduleDetection": "force",
+    "noEmit": true,
+    "jsx": "react-jsx",
+
+    /* Path alias. Deliberately NO `baseUrl`: it is deprecated in TS 6 and
+       removed in TS 7, and paths resolve relative to this file anyway - which
+       is what we want. The same alias is mirrored in vite.config.ts; tsc
+       resolves types, Vite resolves the actual bundle, so both are required. */
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    /* Strictness. `strict` is the floor, not the ceiling. */
+    "strict": true,
+
+    /* Without this, `arr[0]` is typed as T instead of T | undefined and every
+       out-of-bounds read becomes a runtime undefined that the checker swore
+       could not happen. */
+    "noUncheckedIndexedAccess": true,
+
+    /* Distinguishes `{ x?: string }` from `{ x: string | undefined }`, so
+       passing an explicit `undefined` to an optional prop is an error. Matches
+       the backend's tsconfig. */
+    "exactOptionalPropertyTypes": true,
+
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    /* All source here is .ts/.tsx. If a stray .js ever lands in src/, this
+       makes sure it is type-checked rather than silently skipped - the exact
+       hole that let unchecked logic through in the mobile apps. */
+    "checkJs": true,
+
+    /* Bans enums, namespaces and parameter properties: syntax that needs real
+       code emit and therefore cannot be stripped by Vite's transpiler. */
+    "erasableSyntaxOnly": true
+  },
+  "include": ["src"]
+}

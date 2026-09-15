@@ -1,0 +1,19 @@
+# Normalize all text files to LF in the repository and on checkout.
+#
+# Without this, Git on Windows checks files out as CRLF while
+# `prettier.config.js` sets `endOfLine: 'lf'`, so `npm run format:check` fails
+# on a fresh clone for every developer on Windows - and "fixing" it rewrites
+# every file, producing a diff that touches the whole repo.
+* text=auto eol=lf
+
+# Binary files must never be line-ending converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+
+# Generated - collapse in diffs and exclude from language stats.
+package-lock.json linguist-generated=true -diff
