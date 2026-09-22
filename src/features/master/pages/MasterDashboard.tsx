@@ -46,17 +46,19 @@ const { Text } = Typography;
 const { Option } = Select;
 
 interface TenantAdmin {
-  tenant_id: number;
+  tenant_id: string;
   tenant_code: string;
   tenant_name: string;
   database_name: string;
-  admin_id: number | null;
+  admin_id: string | null;
   username: string | null;
   admin_status: 'ACTIVE' | 'INACTIVE' | null;
+  phone?: string | null;
+  admin_role?: string | null;
 }
 
 interface Tenant {
-  id: number;
+  id: string;
   tenant_code: string;
   tenant_name: string;
   database_name: string;
@@ -109,7 +111,7 @@ export function MasterDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<number | ''>('');
+  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
 
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
@@ -216,6 +218,21 @@ export function MasterDashboard() {
     }
   };
 
+  const toggleTenantAdminStatus = async (a: TenantAdmin) => {
+    if (!a.admin_id) return;
+    const newStatus = a.admin_status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await fetch(`http://localhost:4000/api/master/tenant-admins/${a.admin_id}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      fetchTenantAdmins();
+    } catch {
+      message.error('Network error');
+    }
+  };
+
   useEffect(() => {
     if (activeTab === 'hospitals') fetchTenants();
     else if (activeTab === 'admins') fetchTenantAdmins();
@@ -309,9 +326,12 @@ export function MasterDashboard() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          tenantId: Number(selectedTenantId),
+          tenantId: selectedTenantId,
           username: values.username,
           password: values.password,
+          phone: values.phone,
+          role: values.role,
+          status: values.status,
         }),
       });
       if (res.ok) {
@@ -345,6 +365,9 @@ export function MasterDashboard() {
             ...(values.password && values.password.trim().length >= 6
               ? { password: values.password }
               : {}),
+            phone: values.phone,
+            role: values.role,
+            status: values.status,
           }),
         },
       );
@@ -361,6 +384,31 @@ export function MasterDashboard() {
     } finally {
       setIsEditing(false);
     }
+  };
+
+  const handleDeleteAdmin = (a: TenantAdmin) => {
+    modal.confirm({
+      title: 'Delete Admin Login',
+      content: `Are you sure you want to delete the admin "${a.username}" for hospital "${a.tenant_name}"?`,
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          const res = await fetch(`http://localhost:4000/api/master/tenant-admins/${a.admin_id}`, {
+            method: 'DELETE',
+          });
+          if (res.ok) {
+            fetchTenantAdmins();
+            message.success('Admin login deleted.');
+          } else {
+            const d = await res.json();
+            message.error(d.error || 'Failed to delete admin');
+          }
+        } catch {
+          message.error('Network error');
+        }
+      },
+    });
   };
 
   const handleUpdateTenant = async (values: Record<string, any>) => {
@@ -524,11 +572,14 @@ export function MasterDashboard() {
       title: 'Status',
       dataIndex: 'admin_status',
       key: 'admin_status',
-      render: (v: string) => (
-        <Badge
-          status={v === 'ACTIVE' ? 'success' : 'error'}
-          text={<span style={{ fontSize: 11, fontWeight: 600 }}>{v}</span>}
-        />
+      render: (v: string, a: TenantAdmin) => (
+        <Tag
+          color={v === 'ACTIVE' ? 'green' : 'red'}
+          style={{ cursor: 'pointer', fontSize: 11, fontWeight: 600 }}
+          onClick={() => toggleTenantAdminStatus(a)}
+        >
+          {v}
+        </Tag>
       ),
     },
     {
@@ -544,12 +595,24 @@ export function MasterDashboard() {
               icon={<EditOutlined />}
               onClick={() => {
                 setEditingAdmin(a);
-                editAdminForm.setFieldsValue({ username: a.username, password: '' });
+                editAdminForm.setFieldsValue({
+                  username: a.username,
+                  password: '',
+                  phone: a.phone,
+                  role: a.admin_role || 'SUPER_ADMIN',
+                  status: a.admin_status || 'ACTIVE',
+                });
               }}
             />
           </Tooltip>
           <Tooltip title="Delete">
-            <Button type="text" size="small" icon={<DeleteOutlined />} danger />
+            <Button
+              type="text"
+              size="small"
+              icon={<DeleteOutlined />}
+              danger
+              onClick={() => handleDeleteAdmin(a)}
+            />
           </Tooltip>
         </Space>
       ),
@@ -1131,6 +1194,21 @@ export function MasterDashboard() {
           <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 6 }]}>
             <Input.Password placeholder="Enter a new password" autoComplete="new-password" />
           </Form.Item>
+          <Form.Item label="Phone Number" name="phone">
+            <Input placeholder="Optional: +1234567890" />
+          </Form.Item>
+          <Form.Item label="Role" name="role" initialValue="SUPER_ADMIN">
+            <Select>
+              <Option value="SUPER_ADMIN">SUPER_ADMIN</Option>
+              <Option value="ADMIN">ADMIN</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="Status" name="status" initialValue="ACTIVE">
+            <Select>
+              <Option value="ACTIVE">ACTIVE</Option>
+              <Option value="INACTIVE">INACTIVE</Option>
+            </Select>
+          </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <Button
               type="primary"
@@ -1182,6 +1260,21 @@ export function MasterDashboard() {
             name="password"
           >
             <Input.Password placeholder="Leave blank to keep current" autoComplete="new-password" />
+          </Form.Item>
+          <Form.Item label="Phone Number" name="phone">
+            <Input placeholder="Optional: +1234567890" />
+          </Form.Item>
+          <Form.Item label="Role" name="role">
+            <Select>
+              <Option value="SUPER_ADMIN">SUPER_ADMIN</Option>
+              <Option value="ADMIN">ADMIN</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item label="Status" name="status">
+            <Select>
+              <Option value="ACTIVE">ACTIVE</Option>
+              <Option value="INACTIVE">INACTIVE</Option>
+            </Select>
           </Form.Item>
           <Form.Item style={{ marginBottom: 0 }}>
             <Button
