@@ -1,0 +1,1146 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router';
+import { ROUTES } from '@/app/routes';
+import { AiOutlineEdit, AiOutlineDelete } from 'react-icons/ai';
+
+interface TenantAdmin {
+  tenant_id: number;
+  tenant_code: string;
+  tenant_name: string;
+  database_name: string;
+  admin_id: number | null;
+  username: string | null;
+  admin_status: 'ACTIVE' | 'INACTIVE' | null;
+}
+
+interface Tenant {
+  id: number;
+  tenant_code: string;
+  tenant_name: string;
+  database_name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+}
+
+// ── Platform Admin Users (backed by master_admin_users table) ────────────────
+interface AdminUser {
+  id: number;
+  name: string;
+  email: string;
+  role: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+}
+
+export function MasterDashboard() {
+  const navigate = useNavigate();
+
+  // Auth guard
+  useEffect(() => {
+    if (!localStorage.getItem('hms_master_auth')) {
+      navigate(ROUTES.masterLogin);
+    }
+  }, [navigate]);
+
+  const [activeTab, setActiveTab] = useState<'hospitals' | 'admins' | 'admin_users'>('hospitals');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 15;
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeTab, searchQuery, filterStatus]);
+
+  // --- Modals State ---
+  const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
+  const [isCreateAdminModalOpen, setIsCreateAdminModalOpen] = useState(false);
+
+  // --- Tenants State ---
+  const [tenants, setTenants] = useState<Tenant[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Tenant Form
+  const [tenantName, setTenantName] = useState('');
+  const [databaseName, setDatabaseName] = useState('');
+  const [tenantStatus, setTenantStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  const [isProvisioning, setIsProvisioning] = useState(false);
+  const [deletingTenant, setDeletingTenant] = useState<Tenant | null>(null);
+
+  // --- Admins State ---
+  const [tenantAdmins, setTenantAdmins] = useState<TenantAdmin[]>([]);
+  const [editingAdmin, setEditingAdmin] = useState<TenantAdmin | null>(null);
+  const [editAdminUsername, setEditAdminUsername] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Edit Tenant State
+  const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
+  const [editTenantName, setEditTenantName] = useState('');
+  const [editTenantStatus, setEditTenantStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+
+  // Admin Create Form
+  const [selectedTenantId, setSelectedTenantId] = useState<number | ''>('');
+  const [adminUsername, setAdminUsername] = useState('');
+  const [adminPassword, setAdminPassword] = useState('');
+  const [isCreating, setIsCreating] = useState(false);
+
+  // ── Admin Users (platform-level CRUD, backed by API) ──────────────────────
+  const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
+  const [adminUsersLoading, setAdminUsersLoading] = useState(false);
+  const [isAdminUserModalOpen, setIsAdminUserModalOpen] = useState(false);
+  const [editingAdminUser, setEditingAdminUser] = useState<AdminUser | null>(null);
+  const [deletingAdminUser, setDeletingAdminUser] = useState<AdminUser | null>(null);
+  const [auForm, setAuForm] = useState({ name: '', email: '', password: '', role: 'Viewer', status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE' });
+  const [auSaving, setAuSaving] = useState(false);
+
+  const fetchAdminUsers = async () => {
+    setAdminUsersLoading(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/master/admin-users');
+      const data = await res.json();
+      setAdminUsers(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAdminUsersLoading(false);
+    }
+  };
+
+  const openCreateAdminUser = () => {
+    setEditingAdminUser(null);
+    setAuForm({ name: '', email: '', password: '', role: 'Viewer', status: 'ACTIVE' });
+    setIsAdminUserModalOpen(true);
+  };
+
+  const openEditAdminUser = (u: AdminUser) => {
+    setEditingAdminUser(u);
+    setAuForm({ name: u.name, email: u.email, password: '', role: u.role, status: u.status });
+    setIsAdminUserModalOpen(true);
+  };
+
+  const handleSaveAdminUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAuSaving(true);
+    try {
+      if (editingAdminUser) {
+        // Update fields
+        await fetch(`http://localhost:4000/api/master/admin-users/${editingAdminUser.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: auForm.name, email: auForm.email, role: auForm.role, status: auForm.status }),
+        });
+        // Update password only if provided
+        if (auForm.password.trim().length >= 6) {
+          await fetch(`http://localhost:4000/api/master/admin-users/${editingAdminUser.id}/password`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ password: auForm.password }),
+          });
+        }
+      } else {
+        const res = await fetch('http://localhost:4000/api/master/admin-users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: auForm.name, email: auForm.email, password: auForm.password, role: auForm.role, status: auForm.status }),
+        });
+        if (!res.ok) {
+          const d = await res.json();
+          alert(d.error || 'Failed to create admin user');
+          return;
+        }
+      }
+      setIsAdminUserModalOpen(false);
+      fetchAdminUsers();
+    } catch (err) {
+      alert('Network error');
+    } finally {
+      setAuSaving(false);
+    }
+  };
+
+  const handleDeleteAdminUser = async () => {
+    if (!deletingAdminUser) return;
+    try {
+      await fetch(`http://localhost:4000/api/master/admin-users/${deletingAdminUser.id}`, { method: 'DELETE' });
+      setDeletingAdminUser(null);
+      fetchAdminUsers();
+    } catch {
+      alert('Network error');
+    }
+  };
+
+  const toggleAdminUserStatus = async (u: AdminUser) => {
+    const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+    try {
+      await fetch(`http://localhost:4000/api/master/admin-users/${u.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      fetchAdminUsers();
+    } catch {
+      alert('Network error');
+    }
+  };
+  // ────────────────────────────────────────────────────────────────────────────
+
+
+  useEffect(() => {
+    if (activeTab === 'hospitals') {
+      fetchTenants();
+    } else if (activeTab === 'admins') {
+      fetchTenantAdmins();
+    } else {
+      fetchAdminUsers();
+    }
+    // Reset filters when switching tabs
+    setSearchQuery('');
+    setFilterStatus('ALL');
+  }, [activeTab]);
+
+  const handleLogout = () => {
+    localStorage.removeItem('hms_master_auth');
+    localStorage.removeItem('hms_master_token');
+    localStorage.removeItem('hms_master_role');
+    localStorage.removeItem('hms_master_name');
+    navigate(ROUTES.masterLogin);
+  };
+
+  const fetchTenants = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/master/tenants');
+      const data = await res.json();
+      setTenants(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchTenantAdmins = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/master/tenant-admins');
+      const data = await res.json();
+      setTenantAdmins(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!tenantName || !databaseName) return;
+    setIsProvisioning(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/master/tenants', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tenantName, databaseName, status: tenantStatus })
+      });
+      if (res.ok) {
+        setTenantName('');
+        setDatabaseName('');
+        setTenantStatus('ACTIVE');
+        setIsProvisionModalOpen(false);
+        fetchTenants();
+        alert('Tenant and Database provisioned successfully!');
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to create tenant');
+      }
+    } catch (err) {
+      alert('Network error connecting to API');
+    } finally {
+      setIsProvisioning(false);
+    }
+  };
+
+  const handleDeleteTenant = async () => {
+    if (!deletingTenant) return;
+    try {
+      const res = await fetch(`http://localhost:4000/api/master/tenants/${deletingTenant.id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setDeletingTenant(null);
+        fetchTenants();
+      } else {
+        alert('Failed to delete tenant');
+      }
+    } catch (err) {
+      alert('Network error');
+    }
+  };
+
+
+
+  const handleCreateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTenantId || !adminUsername || !adminPassword) return;
+    setIsCreating(true);
+    try {
+      const res = await fetch('http://localhost:4000/api/master/tenant-admins', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tenantId: Number(selectedTenantId),
+          username: adminUsername,
+          password: adminPassword
+        })
+      });
+      if (res.ok) {
+        setAdminUsername('');
+        setAdminPassword('');
+        setSelectedTenantId('');
+        setIsCreateAdminModalOpen(false);
+        fetchTenantAdmins();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to create admin');
+      }
+    } catch (err) {
+      alert('Network error connecting to API');
+    } finally {
+      setIsCreating(false);
+    }
+  };
+
+  const toggleAdminStatus = async (adminId: number, currentStatus: 'ACTIVE' | 'INACTIVE') => {
+    try {
+      const newStatus = currentStatus === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
+      const res = await fetch(`http://localhost:4000/api/master/tenant-admins/${adminId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus })
+      });
+      if (res.ok) {
+        fetchTenantAdmins();
+      } else {
+        alert('Failed to update status');
+      }
+    } catch (err) {
+      alert('Network error');
+    }
+  };
+
+  const handleUpdateAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAdmin || !editAdminUsername) return;
+    setIsEditing(true);
+    try {
+      const res = await fetch(`http://localhost:4000/api/master/tenant-admins/${editingAdmin.admin_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username: editAdminUsername,
+          ...(editPassword.trim().length >= 6 ? { password: editPassword } : {})
+        })
+      });
+      if (res.ok) {
+        setEditingAdmin(null);
+        setEditAdminUsername('');
+        setEditPassword('');
+        fetchTenantAdmins();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to update admin');
+      }
+    } catch (err) {
+      alert('Network error');
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const handleUpdateTenant = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTenant || !editTenantName) return;
+    setIsEditing(true);
+    try {
+      const res = await fetch(`http://localhost:4000/api/master/tenants/${editingTenant.id}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${localStorage.getItem('master_token')}`
+        },
+        body: JSON.stringify({
+          tenantName: editTenantName,
+          status: editTenantStatus
+        })
+      });
+      if (res.ok) {
+        setEditingTenant(null);
+        fetchTenants();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to update tenant');
+      }
+    } catch (err) {
+      alert('Network error connecting to API');
+    } finally {
+      setIsEditing(false);
+    }
+  };
+
+  const tenantsWithoutAdmin = tenantAdmins.filter(t => !t.admin_id);
+
+  const filteredTenants = tenants.filter(t => {
+    const matchesSearch = t.tenant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      t.tenant_code.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchesStatus = filterStatus === 'ALL' || t.status === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredAdmins = tenantAdmins.filter(a => {
+    const matchesSearch = a.tenant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (a.username && a.username.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesStatus = filterStatus === 'ALL' || a.admin_status === filterStatus;
+    return matchesSearch && matchesStatus;
+  });
+
+  const filteredAdminUsers = adminUsers.filter(u => {
+    const matchSearch = u.name.toLowerCase().includes(searchQuery.toLowerCase()) || u.email.toLowerCase().includes(searchQuery.toLowerCase());
+    const matchStatus = filterStatus === 'ALL' || u.status === filterStatus;
+    return matchSearch && matchStatus;
+  });
+
+  const paginatedTenants = filteredTenants.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedAdmins = filteredAdmins.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedAdminUsers = filteredAdminUsers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  const totalItems = activeTab === 'hospitals' ? filteredTenants.length : activeTab === 'admins' ? filteredAdmins.length : filteredAdminUsers.length;
+  const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+
+  return (
+    <div className="flex h-screen bg-[#F8FAFC] font-sans text-slate-800 overflow-hidden">
+
+      {/* SIDEBAR */}
+      <aside className={`bg-white border-r border-slate-200 flex flex-col justify-between flex-shrink-0 transition-all duration-300 z-20 shadow-sm ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
+        <div>
+          <div className={`h-20 flex items-center border-b border-slate-100 px-4 ${isSidebarOpen ? 'justify-between' : 'justify-center'}`}>
+            {isSidebarOpen && (
+              <div className="flex items-center">
+                <div className="w-8 h-8 bg-cyan-600 rounded-lg flex items-center justify-center text-white font-bold shadow-md shadow-cyan-200 flex-shrink-0">H</div>
+                <span className="ml-3 font-bold text-lg tracking-tight text-slate-800 truncate">HMS Master</span>
+              </div>
+            )}
+            <button
+              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded-md transition-colors"
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="3" y1="12" x2="21" y2="12"></line>
+                <line x1="3" y1="6" x2="21" y2="6"></line>
+                <line x1="3" y1="18" x2="21" y2="18"></line>
+              </svg>
+            </button>
+          </div>
+          <div className="py-6 flex flex-col gap-2 px-3">
+            <button
+              onClick={() => setActiveTab('hospitals')}
+              className={`flex items-center p-3 rounded-none transition-colors ${activeTab === 'hospitals' ? 'bg-cyan-50 text-cyan-700 border-r-2 border-cyan-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'} ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'}`}
+            >
+              <span className="text-xl">🏥</span>
+              {isSidebarOpen && <span className="ml-3 font-semibold text-sm">Hospitals & DBs</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('admins')}
+              className={`flex items-center p-3 rounded-none transition-colors ${activeTab === 'admins' ? 'bg-cyan-50 text-cyan-700 border-r-2 border-cyan-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'} ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'}`}
+            >
+              <span className="text-xl">🔐</span>
+              {isSidebarOpen && <span className="ml-3 font-semibold text-sm">Admin Logins</span>}
+            </button>
+            <button
+              onClick={() => setActiveTab('admin_users')}
+              className={`flex items-center p-3 rounded-none transition-colors ${activeTab === 'admin_users' ? 'bg-cyan-50 text-cyan-700 border-r-2 border-cyan-600' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'} ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'}`}
+            >
+              <span className="text-xl">👥</span>
+              {isSidebarOpen && <span className="ml-3 font-semibold text-sm">Admin Users</span>}
+            </button>
+          </div>
+        </div>
+
+        {/* User Profile & Logout */}
+        <div className="p-4 border-t border-slate-100 flex flex-col gap-2">
+          {isSidebarOpen ? (
+            <div className="flex items-center gap-3 px-2 mb-2">
+              <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center text-cyan-700 font-bold shrink-0">
+                {(localStorage.getItem('hms_master_name') || 'SA').substring(0, 2).toUpperCase()}
+              </div>
+              <div className="flex flex-col truncate">
+                <span className="text-sm font-bold text-slate-800 truncate">{localStorage.getItem('hms_master_name') || 'Administrator'}</span>
+                <span className="text-xs text-slate-500 font-medium truncate">{localStorage.getItem('hms_master_role') || 'Super Admin'}</span>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-center mb-2">
+              <div className="w-10 h-10 rounded-full bg-cyan-100 flex items-center justify-center text-cyan-700 font-bold shrink-0" title={`${localStorage.getItem('hms_master_name') || 'Administrator'} (${localStorage.getItem('hms_master_role') || 'Super Admin'})`}>
+                {(localStorage.getItem('hms_master_name') || 'SA').substring(0, 2).toUpperCase()}
+              </div>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className={`w-full flex items-center p-3 rounded-xl text-rose-500 hover:bg-rose-50 hover:text-rose-600 transition-colors ${isSidebarOpen ? 'justify-start px-4' : 'justify-center'}`}
+          >
+            <span className="text-xl">🚪</span>
+            {isSidebarOpen && <span className="ml-3 font-semibold text-sm">Sign Out</span>}
+          </button>
+        </div>
+      </aside>
+
+      {/* MAIN CONTENT */}
+      <main className="flex-1 flex flex-col overflow-hidden relative">
+
+        {/* TOP HEADER */}
+        <header className="bg-white border-b border-slate-200 h-16 px-6 flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <div className="w-7 h-7 rounded bg-blue-50 text-blue-600 flex items-center justify-center font-bold text-xs shadow-sm">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+            </div>
+            <div className="flex flex-col justify-center">
+              <div className="flex items-center gap-2">
+                <h1 className="text-[13px] font-bold text-slate-900 leading-tight">
+                  {activeTab === 'hospitals' ? 'Hospitals & DBs' : activeTab === 'admins' ? 'Admin Logins' : 'Admin Users'}
+                </h1>
+                <span className="text-slate-300">|</span>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  {activeTab === 'hospitals' ? 'Manage all provisioned hospital instances.' : activeTab === 'admins' ? 'Manage Master Admin credentials for hospitals.' : 'Manage platform-level admin user accounts.'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5">
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search name, company, email..."
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                className="w-56 pl-7 pr-3 py-1.5 border border-slate-200 rounded-md text-[11px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-all placeholder:text-slate-400"
+              />
+              <span className="absolute left-2.5 top-2 text-slate-400 text-[10px]">🔍</span>
+            </div>
+
+            {activeTab === 'hospitals' ? (
+              <button
+                onClick={() => setIsProvisionModalOpen(true)}
+                className="bg-[#0891b2] hover:bg-[#0e7490] shadow-[0_4px_14px_0_rgba(8,145,178,0.39)] text-white px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all"
+              >
+                <span>+</span> New Hospital
+              </button>
+            ) : activeTab === 'admins' ? (
+              <button
+                onClick={() => setIsCreateAdminModalOpen(true)}
+                className="bg-[#0891b2] hover:bg-[#0e7490] shadow-[0_4px_14px_0_rgba(8,145,178,0.39)] text-white px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all"
+              >
+                <span>+</span> New Admin
+              </button>
+            ) : (
+              <button
+                onClick={openCreateAdminUser}
+                className="bg-[#0891b2] hover:bg-[#0e7490] shadow-[0_4px_14px_0_rgba(8,145,178,0.39)] text-white px-3 py-1.5 rounded-md text-[11px] font-semibold flex items-center gap-1.5 transition-all"
+              >
+                <span>+</span> New Member
+              </button>
+            )}
+          </div>
+        </header>
+
+        {/* FILTER BAR */}
+        <div className="bg-white border-b border-slate-200 px-6 py-2 flex items-center gap-2 overflow-x-auto flex-shrink-0 hide-scrollbar">
+
+          {/* Actual Functional Status Filter */}
+          <select
+            value={filterStatus}
+            onChange={(e) => setFilterStatus(e.target.value as any)}
+            className="border border-slate-200 text-slate-600 text-[11px] font-medium rounded px-2.5 py-1 outline-none hover:bg-slate-50 cursor-pointer appearance-none pr-7 bg-[url('data:image/svg+xml;charset=US-ASCII,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20width%3D%2210%22%20height%3D%2210%22%20viewBox%3D%220%200%2024%2024%22%20fill%3D%22none%22%20stroke%3D%22%2394a3b8%22%20stroke-width%3D%222%22%20stroke-linecap%3D%22round%22%20stroke-linejoin%3D%22round%22%3E%3Cpolyline%20points%3D%226%209%2012%2015%2018%209%22%3E%3C%2Fpolyline%3E%3C%2Fsvg%3E')] bg-no-repeat bg-[right_6px_center]"
+          >
+            <option value="ALL">All statuses</option>
+            <option value="ACTIVE">Active</option>
+            <option value="INACTIVE">Inactive</option>
+          </select>
+
+          <div className="flex-1"></div>
+
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setFilterStatus('ALL');
+            }}
+            className="text-slate-500 text-[11px] font-semibold px-2 py-1 rounded hover:bg-slate-50 transition-colors"
+          >
+            Reset
+          </button>
+        </div>
+
+        {/* TABLE AREA */}
+        <div className="flex-1 overflow-auto p-6 bg-[#F8FAFC]">
+          <div className="bg-white border border-slate-200 rounded-none shadow-sm overflow-hidden">
+
+            <div className="overflow-x-auto">
+              {/* HOSPITALS TABLE */}
+              {activeTab === 'hospitals' && (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-12">
+                        <input type="checkbox" className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                      </th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hospital Name</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tenant Code</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Database</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedTenants.map(t => (
+                      <tr key={t.id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-2.5">
+                          <input type="checkbox" className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <div className="font-semibold text-slate-900 text-sm">{t.tenant_name}</div>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <span className="font-mono text-xs font-bold text-cyan-600 bg-cyan-50 px-2 py-1 rounded-md border border-cyan-100">{t.tenant_code}</span>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <span className="text-xs text-slate-500 font-medium bg-slate-100 px-2.5 py-1 rounded-full">{t.database_name}</span>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold ${t.status === 'ACTIVE' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 'bg-rose-50 text-rose-600 border border-rose-200'}`}>
+                            {t.status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setEditingTenant(t);
+                                setEditTenantName(t.tenant_name);
+                                setEditTenantStatus(t.status as 'ACTIVE' | 'INACTIVE');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                              title="Edit"
+                            >
+                              <AiOutlineEdit size={16} />
+                            </button>
+                            <button
+                              onClick={() => setDeletingTenant(t)}
+                              className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                              title="Delete"
+                            >
+                              <AiOutlineDelete size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredTenants.length === 0 && !loading && (
+                      <tr><td colSpan={6} className="px-6 py-16 text-center text-slate-400 text-sm">No hospitals found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+
+              {/* ADMINS TABLE */}
+              {activeTab === 'admins' && (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider w-12">
+                        <input type="checkbox" className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                      </th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Hospital Name</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Username</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedAdmins.filter(a => a.admin_id).map(a => (
+                      <tr key={a.admin_id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-2.5">
+                          <input type="checkbox" className="rounded border-slate-300 text-cyan-600 focus:ring-cyan-500" />
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <div className="font-semibold text-slate-900 text-sm">{a.tenant_name}</div>
+                          <div className="text-[11px] font-mono text-slate-400 mt-0.5">{a.tenant_code}</div>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <span className="text-slate-700 text-sm font-medium">{a.username}</span>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <span
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold border inline-block ${a.admin_status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                                : 'bg-rose-50 text-rose-600 border-rose-200'
+                              }`}
+                          >
+                            {a.admin_status}
+                          </span>
+                        </td>
+                        <td className="px-6 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setEditingAdmin(a);
+                                setEditAdminUsername(a.username || '');
+                                setEditPassword('');
+                              }}
+                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors"
+                              title="Edit Admin"
+                            >
+                              <AiOutlineEdit size={16} />
+                            </button>
+                            <button
+                              className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors"
+                              title="Delete"
+                            >
+                              <AiOutlineDelete size={16} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredAdmins.filter(a => a.admin_id).length === 0 && !loading && (
+                      <tr><td colSpan={5} className="px-6 py-16 text-center text-slate-400 text-sm">No admin logins found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+              {/* ADMIN USERS TABLE */}
+              {activeTab === 'admin_users' && (
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-200 bg-slate-50/50">
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Name</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Email</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Role</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Created</th>
+                      <th className="px-6 py-2.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedAdminUsers.map(u => (
+                      <tr key={u.id} className="hover:bg-slate-50/80 transition-colors group">
+                        <td className="px-6 py-2.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-700 font-bold text-xs flex-shrink-0">
+                              {u.name.charAt(0).toUpperCase()}
+                            </div>
+                            <span className="font-semibold text-slate-900 text-sm">{u.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-6 py-2.5 text-sm text-slate-600">{u.email}</td>
+                        <td className="px-6 py-2.5">
+                          <span className="text-xs font-semibold bg-violet-50 text-violet-600 border border-violet-100 px-2.5 py-1 rounded-full">{u.role}</span>
+                        </td>
+                        <td className="px-6 py-2.5">
+                          <button
+                            onClick={() => toggleAdminUserStatus(u)}
+                            className={`px-2.5 py-1 rounded-full text-[11px] font-bold transition-all border ${u.status === 'ACTIVE'
+                                ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200'
+                                : 'bg-rose-50 text-rose-600 border-rose-200 hover:bg-emerald-50 hover:text-emerald-600 hover:border-emerald-200'
+                              }`}
+                          >
+                            {u.status}
+                          </button>
+                        </td>
+                        <td className="px-6 py-2.5 text-xs text-slate-500">{new Date(u.created_at).toLocaleDateString()}</td>
+                        <td className="px-6 py-2.5 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button onClick={() => openEditAdminUser(u)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-md transition-colors" title="Edit"><AiOutlineEdit size={16} /></button>
+                            <button onClick={() => setDeletingAdminUser(u)} className="p-1.5 text-rose-500 hover:text-rose-600 hover:bg-rose-50 rounded-md transition-colors" title="Delete"><AiOutlineDelete size={16} /></button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filteredAdminUsers.length === 0 && !adminUsersLoading && (
+                      <tr><td colSpan={5} className="px-6 py-16 text-center text-slate-400 text-sm">No admin users found.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              )}
+            </div>
+
+
+          </div>
+        </div>
+
+        {/* PAGINATION CONTROLS */}
+        <div className="bg-white border-t border-slate-200 px-6 py-3 flex items-center justify-between flex-shrink-0 z-10 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+          <div className="text-[11px] text-slate-500 font-medium">
+            Showing {totalItems === 0 ? 0 : (currentPage - 1) * itemsPerPage + 1} to {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} entries
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage === 1}
+              className="px-2 py-1 border border-slate-200 rounded text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              « First
+            </button>
+            <button
+              onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+              disabled={currentPage === 1}
+              className="px-2 py-1 border border-slate-200 rounded text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              ‹ Prev
+            </button>
+            <span className="px-3 py-1 text-[11px] text-slate-600 font-medium flex items-center">Page {currentPage} of {totalPages}</span>
+            <button
+              onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 border border-slate-200 rounded text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Next ›
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage === totalPages}
+              className="px-2 py-1 border border-slate-200 rounded text-[11px] font-semibold text-slate-600 bg-white hover:bg-slate-50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              Last »
+            </button>
+          </div>
+        </div>
+
+      </main>
+
+      {/* --- MODALS --- */}
+
+      {/* Provision Hospital Modal */}
+      {isProvisionModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-md w-full shadow-2xl border border-slate-100 relative">
+            <button onClick={() => setIsProvisionModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">🏥 Provision Hospital</h2>
+              <p className="text-slate-500 text-sm mt-1">Create a new tenant and initialize their isolated database.</p>
+            </div>
+
+            <form onSubmit={handleCreateTenant} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Hospital Name</label>
+                <input type="text" value={tenantName} onChange={e => setTenantName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-cyan-500 outline-none" placeholder="e.g. Cauvery Hospital" required />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Database Name</label>
+                <input type="text" value={databaseName} onChange={e => setDatabaseName(e.target.value)} className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-cyan-500 outline-none" placeholder="e.g. hms_cauvery" required pattern="^[a-zA-Z0-9_]+$" title="Only alphanumeric and underscores allowed" />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Status</label>
+                <select
+                  value={tenantStatus}
+                  onChange={e => setTenantStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 appearance-none focus:ring-2 focus:ring-cyan-500 outline-none"
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+              <div className="pt-2">
+                <button type="submit" disabled={isProvisioning} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-cyan-200 disabled:opacity-50">
+                  {isProvisioning ? 'Provisioning DB...' : 'Create Hospital & DB'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Create Admin Modal */}
+      {isCreateAdminModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl border border-slate-100 relative">
+            <button onClick={() => setIsCreateAdminModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">🔐 Create New Admin Login</h2>
+              <p className="text-slate-500 text-sm mt-1">Assign master admin credentials to a hospital.</p>
+            </div>
+
+            <form onSubmit={handleCreateAdmin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Hospital / Tenant</label>
+                <select
+                  value={selectedTenantId}
+                  onChange={e => setSelectedTenantId(e.target.value === '' ? '' : Number(e.target.value))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500 appearance-none"
+                  required
+                >
+                  <option value="" disabled>-- Select a hospital --</option>
+                  {tenantsWithoutAdmin.map(t => (
+                    <option key={t.tenant_id} value={t.tenant_id}>
+                      {t.tenant_name} ({t.tenant_code})
+                    </option>
+                  ))}
+                </select>
+                {tenantsWithoutAdmin.length === 0 && (
+                  <p className="text-xs text-emerald-600 mt-2 font-medium">All current hospitals already have an Admin Login assigned.</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Username</label>
+                <input
+                  type="text"
+                  value={adminUsername}
+                  onChange={e => setAdminUsername(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g. cauvery_admin"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+                <input
+                  type="password"
+                  value={adminPassword}
+                  onChange={e => setAdminPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Enter a new password"
+                  autoComplete="new-password"
+                  required
+                  minLength={6}
+                />
+              </div>
+              <div className="pt-2">
+                <button type="submit" disabled={isCreating || !selectedTenantId} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-cyan-200 transition-all disabled:opacity-50">
+                  {isCreating ? 'Creating...' : 'Create Admin Login'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Tenant Modal */}
+      {deletingTenant && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Hospital</h3>
+            <p className="text-slate-500 text-sm mb-6">Are you sure you want to delete <strong>{deletingTenant.tenant_name}</strong>? This will permanently drop the <strong>{deletingTenant.database_name}</strong> database.</p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingTenant(null)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={handleDeleteTenant} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 shadow-lg shadow-rose-200 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Admin Login Modal */}
+      {editingAdmin && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-100 p-8 relative">
+            <button onClick={() => setEditingAdmin(null)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-slate-900 flex items-center gap-2">✏️ Edit Admin Login</h2>
+              <p className="text-slate-500 text-sm mt-1">Updating credentials for <strong className="text-slate-700">{editingAdmin.tenant_name}</strong></p>
+            </div>
+
+            <form onSubmit={handleUpdateAdmin} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Hospital / Tenant</label>
+                <input
+                  type="text"
+                  value={`${editingAdmin.tenant_name} (${editingAdmin.tenant_code})`}
+                  className="w-full bg-slate-100 border border-slate-200 text-slate-500 rounded-xl px-4 py-3 cursor-not-allowed"
+                  disabled
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Username</label>
+                <input
+                  type="text"
+                  value={editAdminUsername}
+                  onChange={e => setEditAdminUsername(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="e.g. admin_user"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Password</label>
+                <input
+                  type="password"
+                  value={editPassword}
+                  onChange={e => setEditPassword(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-300 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  placeholder="Leave blank to keep current password"
+                  autoComplete="new-password"
+                  minLength={6}
+                />
+              </div>
+              <div className="pt-2">
+                <button type="submit" disabled={isEditing || !editAdminUsername} className="w-full bg-cyan-600 hover:bg-cyan-700 text-white font-bold py-3.5 rounded-xl shadow-lg shadow-cyan-200 transition-all disabled:opacity-50">
+                  {isEditing ? 'Saving...' : 'Update Admin Login'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Tenant Modal */}
+      {editingTenant && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full shadow-2xl border border-slate-100 relative">
+            <button onClick={() => setEditingTenant(null)} className="absolute top-4 right-5 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+            <h2 className="text-lg font-bold text-slate-900 mb-5">Edit Hospital</h2>
+
+            <form onSubmit={handleUpdateTenant} className="space-y-4">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Hospital Name</label>
+                <input
+                  type="text"
+                  value={editTenantName}
+                  onChange={e => setEditTenantName(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Status</label>
+                <select
+                  value={editTenantStatus}
+                  onChange={e => setEditTenantStatus(e.target.value as 'ACTIVE' | 'INACTIVE')}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:outline-none focus:ring-2 focus:ring-cyan-500 appearance-none"
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+              <div className="flex gap-3 pt-2">
+                <button type="button" onClick={() => setEditingTenant(null)} className="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={isEditing} className="flex-1 bg-cyan-600 text-white py-2.5 rounded-xl font-semibold hover:bg-cyan-700 shadow-lg shadow-cyan-200 disabled:opacity-50">
+                  {isEditing ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin User Create / Edit Modal */}
+      {isAdminUserModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl p-8 max-w-lg w-full shadow-2xl border border-slate-100 relative">
+            <button onClick={() => setIsAdminUserModalOpen(false)} className="absolute top-6 right-6 text-slate-400 hover:text-slate-600 text-xl">&times;</button>
+
+            <div className="mb-6">
+              <h2 className="text-xl font-bold text-slate-900">
+                {editingAdminUser ? '✏️ Edit Admin User' : '👥 New Admin User'}
+              </h2>
+              <p className="text-slate-500 text-sm mt-1">
+                {editingAdminUser ? 'Update admin user details.' : 'Create a new platform admin user.'}
+              </p>
+            </div>
+
+            <form onSubmit={handleSaveAdminUser} className="space-y-5">
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Full Name</label>
+                <input
+                  type="text"
+                  value={auForm.name}
+                  onChange={e => setAuForm(f => ({ ...f, name: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-cyan-500 outline-none"
+                  placeholder="e.g. John Smith"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Email Address</label>
+                <input
+                  type="email"
+                  value={auForm.email}
+                  onChange={e => setAuForm(f => ({ ...f, email: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-cyan-500 outline-none"
+                  placeholder="e.g. john@hospital.com"
+                  autoComplete="off"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">
+                  Password {editingAdminUser && <span className="text-slate-400 font-normal">(Leave blank to keep current)</span>}
+                </label>
+                <input
+                  type="password"
+                  value={auForm.password}
+                  onChange={e => setAuForm(f => ({ ...f, password: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 focus:ring-2 focus:ring-cyan-500 outline-none"
+                  placeholder="Enter a secure password"
+                  autoComplete="new-password"
+                  minLength={6}
+                  required={!editingAdminUser}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Role</label>
+                <select
+                  value={auForm.role}
+                  onChange={e => setAuForm(f => ({ ...f, role: e.target.value }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 appearance-none focus:ring-2 focus:ring-cyan-500 outline-none"
+                >
+                  <option value="Super Admin">Super Admin</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Manager">Manager</option>
+                  <option value="Viewer">Viewer</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Status</label>
+                <select
+                  value={auForm.status}
+                  onChange={e => setAuForm(f => ({ ...f, status: e.target.value as 'ACTIVE' | 'INACTIVE' }))}
+                  className="w-full bg-slate-50 border border-slate-200 text-slate-900 rounded-xl px-4 py-3 appearance-none focus:ring-2 focus:ring-cyan-500 outline-none"
+                >
+                  <option value="ACTIVE">ACTIVE</option>
+                  <option value="INACTIVE">INACTIVE</option>
+                </select>
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button type="button" onClick={() => setIsAdminUserModalOpen(false)} className="flex-1 bg-white border border-slate-200 text-slate-700 py-2.5 rounded-xl font-semibold hover:bg-slate-50">Cancel</button>
+                <button type="submit" disabled={auSaving} className="flex-1 bg-cyan-600 text-white py-2.5 rounded-xl font-semibold hover:bg-cyan-700 shadow-lg shadow-cyan-200 disabled:opacity-50">
+                  {auSaving ? 'Saving...' : editingAdminUser ? 'Save Changes' : 'Create User'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Admin User Delete Confirmation */}
+      {deletingAdminUser && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6 border border-slate-100">
+            <h3 className="text-lg font-bold text-slate-900 mb-2">Delete Admin User</h3>
+            <p className="text-slate-500 text-sm mb-6">
+              Are you sure you want to remove <strong>{deletingAdminUser.name}</strong> ({deletingAdminUser.email})? This cannot be undone.
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setDeletingAdminUser(null)} className="flex-1 px-4 py-2.5 border border-slate-200 text-slate-700 rounded-xl font-semibold hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={handleDeleteAdminUser} className="flex-1 px-4 py-2.5 bg-rose-600 text-white rounded-xl font-semibold hover:bg-rose-700 shadow-lg shadow-rose-200 transition-colors">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

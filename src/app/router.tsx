@@ -1,8 +1,13 @@
 import { createBrowserRouter } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
-import { DashboardPage } from '@/features/dashboard/pages/DashboardPage';
-import { AppLayout } from '@/shared/components/AppLayout';
+import { CreateTenant } from '@/features/master/pages/CreateTenant';
+import { MasterDashboard } from '@/features/master/pages/MasterDashboard';
+import { MasterForgotPassword } from '@/features/master/pages/MasterForgotPassword';
+import { MasterLogin } from '@/features/master/pages/MasterLogin';
+import { MasterResetPassword } from '@/features/master/pages/MasterResetPassword';
+import { TenantDashboard } from '@/features/tenant/pages/TenantDashboard';
+import { TenantLogin } from '@/features/tenant/pages/TenantLogin';
 import { RouteErrorPage } from '@/shared/components/RouteErrorPage';
 
 /**
@@ -15,18 +20,19 @@ import { RouteErrorPage } from '@/shared/components/RouteErrorPage';
  * per route without any change to this shape.
  */
 export const router = createBrowserRouter([
+  // Home → Login
   {
-    path: ROUTES.dashboard,
-    element: <AppLayout />,
-    // Catches throws from this route and everything nested under it, including
-    // the 404 below.
+    path: ROUTES.home,
+    element: <MasterLogin />,
     errorElement: <RouteErrorPage />,
-    children: [
-      { index: true, element: <DashboardPage /> },
-
-      // Splat must stay last. Rendering the error page directly (rather than
-      // throwing) keeps the shell's header visible on a wrong URL.
-      { path: '*', element: <RouteErrorPage /> },
-    ],
   },
+  // Master Routes
+  { path: ROUTES.masterForgotPassword, element: <MasterForgotPassword /> },
+  { path: ROUTES.masterResetPassword, element: <MasterResetPassword /> },
+  { path: ROUTES.masterDashboard, element: <MasterDashboard /> },
+  { path: ROUTES.createTenant, element: <CreateTenant /> },
+
+  // Tenant Routes
+  { path: ROUTES.tenantLogin, element: <TenantLogin /> },
+  { path: ROUTES.tenantDashboard, element: <TenantDashboard /> },
 ]);

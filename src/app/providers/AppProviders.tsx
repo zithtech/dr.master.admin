@@ -1,4 +1,5 @@
 import { QueryClientProvider } from '@tanstack/react-query';
+import { App as AntApp, ConfigProvider } from 'antd';
 import { type ReactNode, useState } from 'react';
 
 import { createQueryClient } from '@/shared/api/queryClient';
@@ -24,7 +25,18 @@ export function AppProviders({ children }: Props) {
 
   return (
     <ErrorBoundary>
-      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+      <QueryClientProvider client={queryClient}>
+        <ConfigProvider
+          theme={{
+            token: {
+              colorPrimary: '#0891b2', // cyan-600
+              fontFamily: 'system-ui, sans-serif',
+            },
+          }}
+        >
+          <AntApp>{children}</AntApp>
+        </ConfigProvider>
+      </QueryClientProvider>
     </ErrorBoundary>
   );
 }

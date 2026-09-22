@@ -6,7 +6,14 @@
  * that only shows up in manual testing.
  */
 export const ROUTES = {
-  dashboard: '/',
+  home: '/',
+  masterLogin: '/',
+  masterForgotPassword: '/master/forgot-password',
+  masterResetPassword: '/master/reset-password',
+  masterDashboard: '/master/dashboard',
+  createTenant: '/master/tenants/new',
+  tenantLogin: '/t/:tenantCode/login',
+  tenantDashboard: '/t/:tenantCode/dashboard',
 } as const;
 
 export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];
