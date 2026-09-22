@@ -27,7 +27,7 @@ export function AppLayout() {
 
           <nav aria-label="Main">
             <NavLink
-              to={ROUTES.dashboard}
+              to={ROUTES.home}
               end
               className={({ isActive }) =>
                 isActive
