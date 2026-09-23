@@ -113,7 +113,7 @@ export function MasterDashboard() {
   const [isEditing, setIsEditing] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingTenant, setEditingTenant] = useState<Tenant | null>(null);
-  const [selectedTenantId, setSelectedTenantId] = useState<string>('');
+
 
   const [adminUsers, setAdminUsers] = useState<AdminUser[]>([]);
   const [adminUsersLoading, setAdminUsersLoading] = useState(false);
@@ -933,7 +933,7 @@ export function MasterDashboard() {
                 icon={<PlusOutlined />}
                 onClick={() => {
                   createAdminForm.resetFields();
-                  setSelectedTenantId('');
+
                   setIsCreateAdminModalOpen(true);
                 }}
                 style={btnStyle}
@@ -1134,7 +1134,7 @@ export function MasterDashboard() {
           >
             <Select
               placeholder="-- Select a hospital --"
-              onChange={(val) => setSelectedTenantId(val)}
+
             >
               {tenantsWithoutAdmin.map((t) => (
                 <Option key={t.tenant_id} value={t.tenant_id}>
