@@ -11,6 +11,8 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
+import { apiClient } from '@/shared/api/client';
+import axios from 'axios';
 
 export function MasterResetPassword() {
   const [searchParams] = useSearchParams();
@@ -41,23 +43,21 @@ export function MasterResetPassword() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('http://localhost:4000/api/master/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+      await apiClient.post('/master/reset-password', {
+        token,
+        password,
       });
 
-      if (res.ok) {
-        setSuccess(true);
-        setTimeout(() => {
-          navigate(ROUTES.masterLogin);
-        }, 3000);
+      setSuccess(true);
+      setTimeout(() => {
+        navigate(ROUTES.masterLogin);
+      }, 3000);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data.error || 'Failed to reset password.');
       } else {
-        const data = await res.json();
-        setError(data.error || 'Failed to reset password.');
+        setError('Cannot reach server. Please check your connection.');
       }
-    } catch {
-      setError('Cannot reach server. Please check your connection.');
     } finally {
       setIsLoading(false);
     }

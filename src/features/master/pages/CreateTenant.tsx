@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
+import { apiClient } from '@/shared/api/client';
 
 interface TenantResult {
   tenantCode: string;
@@ -20,19 +21,14 @@ export function CreateTenant() {
     e.preventDefault();
     setIsSubmitting(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/tenants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tenantName, databaseName, status }),
+      const res = await apiClient.post('/master/tenants', {
+        tenantName,
+        databaseName,
+        status,
       });
-      if (res.ok) {
-        const data = (await res.json()) as { data: TenantResult };
-        setResult(data.data);
-      } else {
-        alert('Failed to create hospital');
-      }
+      setResult(res.data.data);
     } catch {
-      alert('Network error');
+      alert('Network error or failed to create hospital');
     } finally {
       setIsSubmitting(false);
     }

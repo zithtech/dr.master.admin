@@ -12,6 +12,8 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
+import { apiClient } from '@/shared/api/client';
+import axios from 'axios';
 
 export function TenantLogin() {
   const { tenantCode } = useParams<{ tenantCode: string }>();
@@ -26,26 +28,23 @@ export function TenantLogin() {
     setIsLoading(true);
     setError('');
     try {
-      const res = await fetch('http://localhost:4000/api/tenant/auth/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ tenantCode, username, password }),
+      const res = await apiClient.post('/tenant/auth/login', {
+        tenantCode,
+        username,
+        password,
       });
-      if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem(`tenant_${tenantCode}_token`, data.token);
-        localStorage.setItem(`tenant_${tenantCode}_username`, username.trim().toLowerCase());
+      const data = res.data;
+      localStorage.setItem(`tenant_${tenantCode}_token`, data.token);
+      localStorage.setItem(`tenant_${tenantCode}_username`, username.trim().toLowerCase());
 
-        // Use string replacement since Route string is dynamic
-        navigate(ROUTES.tenantDashboard.replace(':tenantCode', tenantCode || ''));
+      // Use string replacement since Route string is dynamic
+      navigate(ROUTES.tenantDashboard.replace(':tenantCode', tenantCode || ''));
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data.error || 'Login failed. Check credentials.');
       } else {
-        const errorData = await res.json();
-        setError(errorData.error || 'Login failed. Check credentials.');
+        setError('Network error connecting to hospital API');
       }
-    } catch {
-      setError('Network error connecting to hospital API');
     } finally {
       setIsLoading(false);
     }

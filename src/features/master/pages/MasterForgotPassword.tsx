@@ -9,6 +9,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
+import { apiClient } from '@/shared/api/client';
+import axios from 'axios';
 
 export function MasterForgotPassword() {
   const [email, setEmail] = useState('');
@@ -23,20 +25,17 @@ export function MasterForgotPassword() {
     setIsLoading(true);
 
     try {
-      const res = await fetch('http://localhost:4000/api/master/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+      await apiClient.post('/master/forgot-password', {
+        email: email.trim().toLowerCase(),
       });
-
-      if (res.ok) {
-        setSuccess(true);
+      
+      setSuccess(true);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data.error || 'Failed to request password reset.');
       } else {
-        const data = await res.json();
-        setError(data.error || 'Failed to request password reset.');
+        setError('Cannot reach server. Please check your connection.');
       }
-    } catch {
-      setError('Cannot reach server. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
