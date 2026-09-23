@@ -36,6 +36,8 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { apiClient } from '@/shared/api/client';
+import axios from 'axios';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
@@ -122,8 +124,8 @@ export function MasterDashboard() {
   const fetchAdminUsers = async () => {
     setAdminUsersLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/admin-users');
-      setAdminUsers(await res.json());
+      const res = await apiClient.get('/master/admin-users');
+      setAdminUsers(res.data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -148,43 +150,30 @@ export function MasterDashboard() {
     setAuSaving(true);
     try {
       if (editingAdminUser) {
-        await fetch(`http://localhost:4000/api/master/admin-users/${editingAdminUser.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name: values.name,
-            email: values.email,
-            role: values.role,
-            status: values.status,
-          }),
+        await apiClient.put(`/master/admin-users/${editingAdminUser.id}`, {
+          name: values.name,
+          email: values.email,
+          role: values.role,
+          status: values.status,
         });
         if (values.password?.trim().length >= 6) {
-          await fetch(
-            `http://localhost:4000/api/master/admin-users/${editingAdminUser.id}/password`,
-            {
-              method: 'PUT',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ password: values.password }),
-            },
+          await apiClient.put(
+            `/master/admin-users/${editingAdminUser.id}/password`,
+            { password: values.password }
           );
         }
       } else {
-        const res = await fetch('http://localhost:4000/api/master/admin-users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(values),
-        });
-        if (!res.ok) {
-          const d = await res.json();
-          message.error(d.error || 'Failed to create master user');
-          return;
-        }
+        await apiClient.post('/master/admin-users', values);
       }
       setIsAdminUserModalOpen(false);
       fetchAdminUsers();
       message.success(editingAdminUser ? 'Master user updated.' : 'Master user created.');
-    } catch {
-      message.error('Network error');
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to save master user');
+      } else {
+        message.error('Network error');
+      }
     } finally {
       setAuSaving(false);
     }
@@ -197,9 +186,13 @@ export function MasterDashboard() {
       okText: 'Delete',
       okButtonProps: { danger: true },
       onOk: async () => {
-        await fetch(`http://localhost:4000/api/master/admin-users/${u.id}`, { method: 'DELETE' });
-        fetchAdminUsers();
-        message.success('Master user deleted.');
+        try {
+          await apiClient.delete(`/master/admin-users/${u.id}`);
+          fetchAdminUsers();
+          message.success('Master user deleted.');
+        } catch {
+          message.error('Failed to delete master user');
+        }
       },
     });
   };
@@ -207,11 +200,7 @@ export function MasterDashboard() {
   const toggleAdminUserStatus = async (u: AdminUser) => {
     const newStatus = u.status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
-      await fetch(`http://localhost:4000/api/master/admin-users/${u.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      await apiClient.put(`/master/admin-users/${u.id}`, { status: newStatus });
       fetchAdminUsers();
     } catch {
       message.error('Network error');
@@ -222,11 +211,7 @@ export function MasterDashboard() {
     if (!a.admin_id) return;
     const newStatus = a.admin_status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE';
     try {
-      await fetch(`http://localhost:4000/api/master/tenant-admins/${a.admin_id}/status`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: newStatus }),
-      });
+      await apiClient.put(`/master/tenant-admins/${a.admin_id}/status`, { status: newStatus });
       fetchTenantAdmins();
     } catch {
       message.error('Network error');
@@ -251,8 +236,8 @@ export function MasterDashboard() {
   const fetchTenants = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/tenants');
-      setTenants(await res.json());
+      const res = await apiClient.get('/master/tenants');
+      setTenants(res.data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -263,8 +248,8 @@ export function MasterDashboard() {
   const fetchTenantAdmins = async () => {
     setLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/tenant-admins');
-      setTenantAdmins(await res.json());
+      const res = await apiClient.get('/master/tenant-admins');
+      setTenantAdmins(res.data);
     } catch (error) {
       console.error(error);
     } finally {
@@ -275,26 +260,21 @@ export function MasterDashboard() {
   const handleCreateTenant = async (values: Record<string, any>) => {
     setIsProvisioning(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/tenants', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantName: values.tenantName,
-          databaseName: values.databaseName,
-          status: values.status,
-        }),
+      await apiClient.post('/master/tenants', {
+        tenantName: values.tenantName,
+        databaseName: values.databaseName,
+        status: values.status,
       });
-      if (res.ok) {
-        provisionForm.resetFields();
-        setIsProvisionModalOpen(false);
-        fetchTenants();
-        message.success('Hospital and Database provisioned!');
+      provisionForm.resetFields();
+      setIsProvisionModalOpen(false);
+      fetchTenants();
+      message.success('Hospital and Database provisioned!');
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to create tenant');
       } else {
-        const d = await res.json();
-        message.error(d.error || 'Failed to create tenant');
+        message.error('Network error');
       }
-    } catch {
-      message.error('Network error');
     } finally {
       setIsProvisioning(false);
     }
@@ -307,45 +287,38 @@ export function MasterDashboard() {
       okText: 'Delete',
       okButtonProps: { danger: true },
       onOk: async () => {
-        const res = await fetch(`http://localhost:4000/api/master/tenants/${t.id}`, {
-          method: 'DELETE',
-        });
-        if (res.ok) {
+        try {
+          await apiClient.delete(`/master/tenants/${t.id}`);
           fetchTenants();
           message.success('Tenant deleted.');
-        } else message.error('Failed to delete tenant');
+        } catch (err) {
+          message.error('Failed to delete tenant');
+        }
       },
     });
   };
 
   const handleCreateAdmin = async (values: Record<string, any>) => {
-    if (!selectedTenantId) return;
     setIsCreating(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/tenant-admins', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: selectedTenantId,
-          username: values.username,
-          password: values.password,
-          phone: values.phone,
-          role: values.role,
-          status: values.status,
-        }),
+      await apiClient.post('/master/tenant-admins', {
+        tenantId: values.tenantId,
+        username: values.username,
+        password: values.password,
+        phone: values.phone,
+        role: values.role,
+        status: values.status,
       });
-      if (res.ok) {
-        createAdminForm.resetFields();
-        setSelectedTenantId('');
-        setIsCreateAdminModalOpen(false);
-        fetchTenantAdmins();
-        message.success('Admin login created.');
+      createAdminForm.resetFields();
+      setIsCreateAdminModalOpen(false);
+      fetchTenantAdmins();
+      message.success('Admin login created.');
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to create admin');
       } else {
-        const d = await res.json();
-        message.error(d.error || 'Failed to create admin');
+        message.error('Network error');
       }
-    } catch {
-      message.error('Network error');
     } finally {
       setIsCreating(false);
     }
@@ -355,32 +328,27 @@ export function MasterDashboard() {
     if (!editingAdmin) return;
     setIsEditing(true);
     try {
-      const res = await fetch(
-        `http://localhost:4000/api/master/tenant-admins/${editingAdmin.admin_id}`,
+      await apiClient.put(
+        `/master/tenant-admins/${editingAdmin.admin_id}`,
         {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            username: values.username,
-            ...(values.password && values.password.trim().length >= 6
-              ? { password: values.password }
-              : {}),
-            phone: values.phone,
-            role: values.role,
-            status: values.status,
-          }),
-        },
+          username: values.username,
+          ...(values.password && values.password.trim().length >= 6
+            ? { password: values.password }
+            : {}),
+          phone: values.phone,
+          role: values.role,
+          status: values.status,
+        }
       );
-      if (res.ok) {
-        setEditingAdmin(null);
-        fetchTenantAdmins();
-        message.success('Admin updated.');
+      setEditingAdmin(null);
+      fetchTenantAdmins();
+      message.success('Admin updated.');
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to update admin');
       } else {
-        const d = await res.json();
-        message.error(d.error || 'Failed to update admin');
+        message.error('Network error');
       }
-    } catch {
-      message.error('Network error');
     } finally {
       setIsEditing(false);
     }
@@ -394,18 +362,15 @@ export function MasterDashboard() {
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          const res = await fetch(`http://localhost:4000/api/master/tenant-admins/${a.admin_id}`, {
-            method: 'DELETE',
-          });
-          if (res.ok) {
-            fetchTenantAdmins();
-            message.success('Admin login deleted.');
+          await apiClient.delete(`/master/tenant-admins/${a.admin_id}`);
+          fetchTenantAdmins();
+          message.success('Admin login deleted.');
+        } catch (err) {
+          if (axios.isAxiosError(err) && err.response) {
+            message.error(err.response.data.error || 'Failed to delete admin');
           } else {
-            const d = await res.json();
-            message.error(d.error || 'Failed to delete admin');
+            message.error('Network error');
           }
-        } catch {
-          message.error('Network error');
         }
       },
     });
@@ -415,24 +380,19 @@ export function MasterDashboard() {
     if (!editingTenant) return;
     setIsEditing(true);
     try {
-      const res = await fetch(`http://localhost:4000/api/master/tenants/${editingTenant.id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${localStorage.getItem('master_token')}`,
-        },
-        body: JSON.stringify({ tenantName: values.tenantName, status: values.status }),
+      await apiClient.put(`/master/tenants/${editingTenant.id}`, {
+        tenantName: values.tenantName,
+        status: values.status,
       });
-      if (res.ok) {
-        setEditingTenant(null);
-        fetchTenants();
-        message.success('Hospital updated.');
+      setEditingTenant(null);
+      fetchTenants();
+      message.success('Hospital updated.');
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to update tenant');
       } else {
-        const d = await res.json();
-        message.error(d.error || 'Failed to update tenant');
+        message.error('Network error');
       }
-    } catch {
-      message.error('Network error');
     } finally {
       setIsEditing(false);
     }

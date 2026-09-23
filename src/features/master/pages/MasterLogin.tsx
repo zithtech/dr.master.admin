@@ -12,6 +12,8 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router';
 
 import { ROUTES } from '@/app/routes';
+import { apiClient } from '@/shared/api/client';
+import axios from 'axios';
 
 export function MasterLogin() {
   const [email, setEmail] = useState('');
@@ -26,25 +28,23 @@ export function MasterLogin() {
     setError('');
     setIsLoading(true);
     try {
-      const res = await fetch('http://localhost:4000/api/master/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase(), password }),
+      const res = await apiClient.post('/master/login', {
+        email: email.trim().toLowerCase(),
+        password,
       });
-      if (res.ok) {
-        const data = await res.json();
-        localStorage.setItem('hms_master_auth', 'true');
-        localStorage.setItem('hms_master_token', data.token);
-        localStorage.setItem('hms_master_role', data.role);
-        localStorage.setItem('hms_master_name', data.name);
-        localStorage.setItem('hms_master_email', email.trim().toLowerCase());
-        navigate(ROUTES.masterDashboard);
+      const data = res.data;
+      localStorage.setItem('hms_master_auth', 'true');
+      localStorage.setItem('hms_master_token', data.token);
+      localStorage.setItem('hms_master_role', data.role);
+      localStorage.setItem('hms_master_name', data.name);
+      localStorage.setItem('hms_master_email', email.trim().toLowerCase());
+      navigate(ROUTES.masterDashboard);
+    } catch (err) {
+      if (axios.isAxiosError(err) && err.response) {
+        setError(err.response.data.error || 'Invalid email or password. Please try again.');
       } else {
-        const data = await res.json();
-        setError(data.error || 'Invalid email or password. Please try again.');
+        setError('Cannot reach server. Please check your connection.');
       }
-    } catch {
-      setError('Cannot reach server. Please check your connection.');
     } finally {
       setIsLoading(false);
     }
