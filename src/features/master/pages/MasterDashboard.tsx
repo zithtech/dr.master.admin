@@ -53,6 +53,7 @@ interface TenantAdmin {
   tenant_name: string;
   database_name: string;
   admin_id: string | null;
+  admin_name?: string | null;
   username: string | null;
   admin_status: 'ACTIVE' | 'INACTIVE' | null;
   phone?: string | null;
@@ -303,6 +304,7 @@ export function MasterDashboard() {
     try {
       await apiClient.post('/master/tenant-admins', {
         tenantId: values.tenantId,
+        name: values.name,
         username: values.username,
         password: values.password,
         phone: values.phone,
@@ -331,6 +333,7 @@ export function MasterDashboard() {
       await apiClient.put(
         `/master/tenant-admins/${editingAdmin.admin_id}`,
         {
+          name: values.name,
           username: values.username,
           ...(values.password && values.password.trim().length >= 6
             ? { password: values.password }
@@ -523,6 +526,12 @@ export function MasterDashboard() {
       ),
     },
     {
+      title: 'Name',
+      dataIndex: 'admin_name',
+      key: 'admin_name',
+      render: (v: string) => <Text style={{ fontSize: 13 }}>{v || '-'}</Text>,
+    },
+    {
       title: 'Username',
       dataIndex: 'username',
       key: 'username',
@@ -556,6 +565,7 @@ export function MasterDashboard() {
               onClick={() => {
                 setEditingAdmin(a);
                 editAdminForm.setFieldsValue({
+                  name: a.admin_name,
                   username: a.username,
                   password: '',
                   phone: a.phone,
@@ -1148,6 +1158,9 @@ export function MasterDashboard() {
               All hospitals already have an Admin Login assigned.
             </p>
           )}
+          <Form.Item label="Name" name="name" rules={[{ required: true }]}>
+            <Input placeholder="e.g. John Doe" autoComplete="off" />
+          </Form.Item>
           <Form.Item label="Username" name="username" rules={[{ required: true }]}>
             <Input placeholder="e.g. cauvery_admin" autoComplete="off" />
           </Form.Item>
@@ -1204,6 +1217,9 @@ export function MasterDashboard() {
               }
               disabled
             />
+          </Form.Item>
+          <Form.Item label="Name" name="name" rules={[{ required: true }]}>
+            <Input placeholder="e.g. John Doe" autoComplete="off" />
           </Form.Item>
           <Form.Item label="Username" name="username" rules={[{ required: true }]}>
             <Input placeholder="e.g. admin_user" autoComplete="off" />
