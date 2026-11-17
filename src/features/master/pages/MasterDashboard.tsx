@@ -26,6 +26,7 @@ import {
   Avatar,
   Badge,
   Button,
+  Drawer,
   Form,
   Input,
   Modal,
@@ -70,7 +71,7 @@ interface Tenant {
 }
 
 interface AdminUser {
-  id: number;
+  id: string;
   name: string;
   email: string;
   role: string;
@@ -98,7 +99,7 @@ export function MasterDashboard() {
   }, [activeTab, searchQuery, filterStatus]);
 
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
-  const [isCreateAdminModalOpen, setIsCreateAdminModalOpen] = useState(false);
+  const [isCreateAdminDrawerOpen, setIsCreateAdminDrawerOpen] = useState(false);
   const [provisionForm] = Form.useForm();
   const [createAdminForm] = Form.useForm();
   const [editAdminForm] = Form.useForm();
@@ -219,10 +220,22 @@ export function MasterDashboard() {
     }
   };
 
+  const openCreateAdmin = () => {
+    createAdminForm.resetFields();
+    fetchTenants();
+    fetchTenantAdmins();
+    setIsCreateAdminDrawerOpen(true);
+  };
+
   useEffect(() => {
-    if (activeTab === 'hospitals') fetchTenants();
-    else if (activeTab === 'admins') fetchTenantAdmins();
-    else fetchAdminUsers();
+    if (activeTab === 'hospitals') {
+      fetchTenants();
+    } else if (activeTab === 'admins') {
+      fetchTenantAdmins();
+      fetchTenants();
+    } else {
+      fetchAdminUsers();
+    }
     setSearchQuery('');
     setFilterStatus('ALL');
   }, [activeTab]);
@@ -312,7 +325,7 @@ export function MasterDashboard() {
         status: values.status,
       });
       createAdminForm.resetFields();
-      setIsCreateAdminModalOpen(false);
+      setIsCreateAdminDrawerOpen(false);
       fetchTenantAdmins();
       message.success('Admin login created.');
     } catch (err) {
@@ -401,7 +414,27 @@ export function MasterDashboard() {
     }
   };
 
-  const tenantsWithoutAdmin = tenantAdmins.filter((t) => !t.admin_id);
+  const hospitalOptions =
+    tenants.length > 0
+      ? tenants.map((t) => ({
+          id: t.id,
+          tenant_name: t.tenant_name,
+          tenant_code: t.tenant_code,
+          status: t.status,
+        }))
+      : Array.from(
+          new Map(
+            tenantAdmins.map((t) => [
+              t.tenant_id,
+              {
+                id: t.tenant_id,
+                tenant_name: t.tenant_name,
+                tenant_code: t.tenant_code,
+                status: 'ACTIVE' as const,
+              },
+            ]),
+          ).values(),
+        );
   const filteredTenants = tenants.filter(
     (t) =>
       (t.tenant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -941,11 +974,7 @@ export function MasterDashboard() {
                 type="primary"
                 size="middle"
                 icon={<PlusOutlined />}
-                onClick={() => {
-                  createAdminForm.resetFields();
-
-                  setIsCreateAdminModalOpen(true);
-                }}
+                onClick={openCreateAdmin}
                 style={btnStyle}
               >
                 New Admin
@@ -1126,16 +1155,63 @@ export function MasterDashboard() {
         </Form>
       </Modal>
 
-      <Modal
-        title="🔐 Create New Admin Login"
-        open={isCreateAdminModalOpen}
-        onCancel={() => setIsCreateAdminModalOpen(false)}
-        footer={null}
-        width={480}
+      <Drawer
+        title={
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: 'linear-gradient(135deg, #0891b2 0%, #06b6d4 100%)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                color: '#fff',
+                fontSize: 18,
+                boxShadow: '0 4px 12px rgba(8, 145, 178, 0.25)',
+              }}
+            >
+              🔐
+            </div>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 700, color: '#0f172a', lineHeight: 1.2 }}>
+                Create New Admin Login
+              </div>
+              <div style={{ fontSize: 12, color: '#64748b', fontWeight: 400 }}>
+                Assign master admin credentials to a hospital instance
+              </div>
+            </div>
+          </div>
+        }
+        open={isCreateAdminDrawerOpen}
+        onClose={() => setIsCreateAdminDrawerOpen(false)}
+        width={460}
+        destroyOnHidden
+        styles={{
+          header: { borderBottom: '1px solid #f1f5f9', padding: '16px 20px' },
+          body: { padding: '24px 20px' },
+          footer: { borderTop: '1px solid #f1f5f9', padding: '14px 20px' },
+        }}
+        footer={
+          <div style={{ display: 'flex', gap: 12, justifyContent: 'flex-end' }}>
+            <Button
+              onClick={() => setIsCreateAdminDrawerOpen(false)}
+              style={{ borderRadius: 8, height: 38 }}
+            >
+              Cancel
+            </Button>
+            <Button
+              type="primary"
+              onClick={() => createAdminForm.submit()}
+              loading={isCreating}
+              style={{ ...btnStyle, height: 38, fontWeight: 600, padding: '0 20px', borderRadius: 8 }}
+            >
+              Create Admin Login
+            </Button>
+          </div>
+        }
       >
-        <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
-          Assign master admin credentials to a hospital.
-        </p>
         <Form form={createAdminForm} layout="vertical" onFinish={handleCreateAdmin}>
           <Form.Item
             label="Hospital / Tenant"
@@ -1144,27 +1220,41 @@ export function MasterDashboard() {
           >
             <Select
               placeholder="-- Select a hospital --"
-
+              showSearch
+              optionFilterProp="children"
+              filterOption={(input, option) =>
+                String(option?.children ?? '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
+              style={{ width: '100%' }}
             >
-              {tenantsWithoutAdmin.map((t) => (
-                <Option key={t.tenant_id} value={t.tenant_id}>
-                  {t.tenant_name} ({t.tenant_code})
+              {hospitalOptions.map((h) => (
+                <Option key={h.id} value={h.id}>
+                  {h.tenant_name} ({h.tenant_code})
                 </Option>
               ))}
             </Select>
           </Form.Item>
-          {tenantsWithoutAdmin.length === 0 && (
-            <p style={{ color: '#10b981', fontSize: 12, marginBottom: 12 }}>
-              All hospitals already have an Admin Login assigned.
+          {hospitalOptions.length === 0 && (
+            <p style={{ color: '#f59e0b', fontSize: 12, marginTop: -8, marginBottom: 16 }}>
+              No provisioned hospitals found. Please create a hospital first.
             </p>
           )}
-          <Form.Item label="Name" name="name" rules={[{ required: true }]}>
+          <Form.Item label="Name" name="name" rules={[{ required: true, message: 'Please enter admin name' }]}>
             <Input placeholder="e.g. John Doe" autoComplete="off" />
           </Form.Item>
-          <Form.Item label="Username" name="username" rules={[{ required: true }]}>
+          <Form.Item label="Username" name="username" rules={[{ required: true, message: 'Please enter username' }]}>
             <Input placeholder="e.g. cauvery_admin" autoComplete="off" />
           </Form.Item>
-          <Form.Item label="Password" name="password" rules={[{ required: true }, { min: 6 }]}>
+          <Form.Item
+            label="Password"
+            name="password"
+            rules={[
+              { required: true, message: 'Please enter password' },
+              { min: 6, message: 'Password must be at least 6 characters' },
+            ]}
+          >
             <Input.Password placeholder="Enter a new password" autoComplete="new-password" />
           </Form.Item>
           <Form.Item label="Phone Number" name="phone">
@@ -1182,19 +1272,8 @@ export function MasterDashboard() {
               <Option value="INACTIVE">INACTIVE</Option>
             </Select>
           </Form.Item>
-          <Form.Item style={{ marginBottom: 0 }}>
-            <Button
-              type="primary"
-              htmlType="submit"
-              block
-              loading={isCreating}
-              style={{ ...btnStyle, height: 42, fontWeight: 700 }}
-            >
-              Create Admin Login
-            </Button>
-          </Form.Item>
         </Form>
-      </Modal>
+      </Drawer>
 
       <Modal
         title="✏️ Edit Admin Login"
