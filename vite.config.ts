@@ -5,8 +5,8 @@ import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
-/** Backend dev server. Hardcoded contract across all three clients. */
-const API_DEV_TARGET = 'http://localhost:4000';
+/** Backend dev server. Points to admin backend on port 5000 by default (or VITE_BACKEND_URL override). */
+const API_DEV_TARGET = process.env.VITE_BACKEND_URL || 'http://localhost:5000';
 
 export default defineConfig({
   plugins: [

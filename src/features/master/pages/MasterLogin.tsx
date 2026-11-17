@@ -126,7 +126,7 @@ export function MasterLogin() {
             {/* Email */}
             <div>
               <label className="mb-2 block text-xs font-semibold tracking-wider text-slate-400 uppercase">
-                Email Address
+                Email or Username
               </label>
               <div className="relative">
                 <span className="pointer-events-none absolute top-1/2 left-4 -translate-y-1/2 text-slate-500">
@@ -146,11 +146,11 @@ export function MasterLogin() {
                 </span>
                 <input
                   id="hms-email"
-                  type="email"
+                  type="text"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full rounded-xl border border-white/10 bg-white/[0.04] py-3.5 pr-4 pl-11 text-sm text-white transition-all placeholder:text-slate-600 focus:border-indigo-500/50 focus:ring-2 focus:ring-indigo-500/60 focus:outline-none"
-                  placeholder="Enter your email address"
+                  placeholder="Enter your email or username"
                   required
                   autoComplete="off"
                 />
