@@ -30,6 +30,7 @@ export const router = createBrowserRouter([
   { path: ROUTES.masterForgotPassword, element: <MasterForgotPassword /> },
   { path: ROUTES.masterResetPassword, element: <MasterResetPassword /> },
   { path: ROUTES.masterDashboard, element: <MasterDashboard /> },
+  { path: ROUTES.tenants, element: <MasterDashboard defaultTab="tenants" /> },
   { path: ROUTES.createTenant, element: <CreateTenant /> },
 
   // Tenant Routes

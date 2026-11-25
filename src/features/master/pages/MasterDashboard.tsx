@@ -11,16 +11,22 @@
 /* eslint-disable react-hooks/immutability */
 
 import {
+  ApartmentOutlined,
   BankOutlined,
+  CloseOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeOutlined,
   LockOutlined,
   LogoutOutlined,
+  MailOutlined,
   MenuOutlined,
   PlusOutlined,
   SearchOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
+import type { HospitalTenant } from '@/types/api';
 import {
   App,
   Avatar,
@@ -79,7 +85,11 @@ interface AdminUser {
   created_at: string;
 }
 
-export function MasterDashboard() {
+export interface MasterDashboardProps {
+  defaultTab?: 'tenants' | 'hospitals' | 'admins' | 'admin_users';
+}
+
+export function MasterDashboard({ defaultTab = 'tenants' }: MasterDashboardProps = {}) {
   const navigate = useNavigate();
   const { message, modal } = App.useApp();
 
@@ -87,16 +97,54 @@ export function MasterDashboard() {
     if (!localStorage.getItem('hms_master_auth')) navigate(ROUTES.masterLogin);
   }, [navigate]);
 
-  const [activeTab, setActiveTab] = useState<'hospitals' | 'admins' | 'admin_users'>('hospitals');
+  const [activeTab, setActiveTab] = useState<'tenants' | 'hospitals' | 'admins' | 'admin_users'>(
+    defaultTab || 'tenants',
+  );
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState<'ALL' | 'ACTIVE' | 'INACTIVE'>('ALL');
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1200,
+  );
+  const isMobile = windowWidth < 768;
+  const isTablet = windowWidth >= 768 && windowWidth < 1024;
+
+  const [isSidebarOpen, setIsSidebarOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true,
+  );
+
+  useEffect(() => {
+    const handleResize = () => {
+      const width = window.innerWidth;
+      setWindowWidth(width);
+      if (width < 768) {
+        setIsSidebarOpen(false);
+      } else if (width < 1024) {
+        setIsSidebarOpen(false);
+      } else {
+        setIsSidebarOpen(true);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 15;
 
   useEffect(() => {
     setCurrentPage(1);
   }, [activeTab, searchQuery, filterStatus]);
+
+  // Hospital Tenants state (dedicated 9-column CRUD)
+  const [hospitalTenants, setHospitalTenants] = useState<HospitalTenant[]>([]);
+  const [hospitalTenantsLoading, setHospitalTenantsLoading] = useState(false);
+  const [isCreateTenantDrawerOpen, setIsCreateTenantDrawerOpen] = useState(false);
+  const [isEditTenantDrawerOpen, setIsEditTenantDrawerOpen] = useState(false);
+  const [isViewTenantDrawerOpen, setIsViewTenantDrawerOpen] = useState(false);
+  const [selectedHospitalTenant, setSelectedHospitalTenant] = useState<HospitalTenant | null>(null);
+  const [createTenantDrawerForm] = Form.useForm();
+  const [editTenantDrawerForm] = Form.useForm();
+  const [isSubmittingTenant, setIsSubmittingTenant] = useState(false);
 
   const [isProvisionModalOpen, setIsProvisionModalOpen] = useState(false);
   const [isCreateAdminDrawerOpen, setIsCreateAdminDrawerOpen] = useState(false);
@@ -107,7 +155,7 @@ export function MasterDashboard() {
   const [adminUserForm] = Form.useForm();
 
   const [tenants, setTenants] = useState<Tenant[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [isProvisioning, setIsProvisioning] = useState(false);
 
   const [tenantAdmins, setTenantAdmins] = useState<TenantAdmin[]>([]);
@@ -227,8 +275,109 @@ export function MasterDashboard() {
     setIsCreateAdminDrawerOpen(true);
   };
 
+  const fetchHospitalTenants = async () => {
+    setHospitalTenantsLoading(true);
+    try {
+      const res = await apiClient.get<HospitalTenant[]>('/master/hospital-tenants');
+      setHospitalTenants(res.data);
+    } catch (error) {
+      console.error(error);
+      message.error('Failed to load hospital tenants');
+    } finally {
+      setHospitalTenantsLoading(false);
+    }
+  };
+
+  const handleCreateHospitalTenant = async (values: Record<string, any>) => {
+    setIsSubmittingTenant(true);
+    try {
+      await apiClient.post('/master/hospital-tenants', {
+        tenant_name: values.tenant_name,
+        tenant_code: values.tenant_code?.trim() || undefined,
+        email: values.email?.trim() || null,
+        phone: values.phone?.trim() || null,
+        address_line1: values.address_line1?.trim() || null,
+        address_line2: values.address_line2?.trim() || null,
+        city: values.city?.trim() || null,
+        state: values.state?.trim() || null,
+        pincode: values.pincode?.trim() || null,
+        status: values.status || 'ACTIVE',
+      });
+      createTenantDrawerForm.resetFields();
+      setIsCreateTenantDrawerOpen(false);
+      fetchHospitalTenants();
+      message.success(
+        values.email?.trim()
+          ? 'Tenant registered successfully! Welcome email sent to ' + values.email.trim()
+          : 'Tenant registered successfully!',
+      );
+    } catch (err: any) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to create tenant');
+      } else {
+        message.error('Network error');
+      }
+    } finally {
+      setIsSubmittingTenant(false);
+    }
+  };
+
+  const handleUpdateHospitalTenant = async (values: Record<string, any>) => {
+    if (!selectedHospitalTenant) return;
+    setIsSubmittingTenant(true);
+    try {
+      await apiClient.put(`/master/hospital-tenants/${selectedHospitalTenant.id}`, {
+        tenant_name: values.tenant_name,
+        email: values.email?.trim() || null,
+        phone: values.phone?.trim() || null,
+        address_line1: values.address_line1?.trim() || null,
+        address_line2: values.address_line2?.trim() || null,
+        city: values.city?.trim() || null,
+        state: values.state?.trim() || null,
+        pincode: values.pincode?.trim() || null,
+        status: values.status,
+      });
+      setIsEditTenantDrawerOpen(false);
+      setSelectedHospitalTenant(null);
+      fetchHospitalTenants();
+      message.success('Tenant updated successfully!');
+    } catch (err: any) {
+      if (axios.isAxiosError(err) && err.response) {
+        message.error(err.response.data.error || 'Failed to update tenant');
+      } else {
+        message.error('Network error');
+      }
+    } finally {
+      setIsSubmittingTenant(false);
+    }
+  };
+
+  const handleDeleteHospitalTenant = (tenant: HospitalTenant) => {
+    modal.confirm({
+      title: 'Delete Tenant',
+      content: `Are you sure you want to permanently delete "${tenant.tenant_name}" (${tenant.tenant_code})? This action cannot be undone.`,
+      okText: 'Delete',
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        try {
+          await apiClient.delete(`/master/hospital-tenants/${tenant.id}`);
+          fetchHospitalTenants();
+          message.success('Tenant deleted successfully.');
+        } catch (err: any) {
+          if (axios.isAxiosError(err) && err.response) {
+            message.error(err.response.data.error || 'Failed to delete tenant');
+          } else {
+            message.error('Network error');
+          }
+        }
+      },
+    });
+  };
+
   useEffect(() => {
-    if (activeTab === 'hospitals') {
+    if (activeTab === 'tenants') {
+      fetchHospitalTenants();
+    } else if (activeTab === 'hospitals') {
       fetchTenants();
     } else if (activeTab === 'admins') {
       fetchTenantAdmins();
@@ -435,6 +584,15 @@ export function MasterDashboard() {
             ]),
           ).values(),
         );
+  const filteredHospitalTenants = hospitalTenants.filter(
+    (t) =>
+      (t.tenant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        t.tenant_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.email && t.email.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (t.phone && t.phone.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (t.address && t.address.toLowerCase().includes(searchQuery.toLowerCase()))) &&
+      (filterStatus === 'ALL' || t.status === filterStatus),
+  );
   const filteredTenants = tenants.filter(
     (t) =>
       (t.tenant_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -456,12 +614,208 @@ export function MasterDashboard() {
   );
 
   const totalItems =
-    activeTab === 'hospitals'
-      ? filteredTenants.length
-      : activeTab === 'admins'
-        ? filteredAdmins.length
-        : filteredAdminUsers.length;
+    activeTab === 'tenants'
+      ? filteredHospitalTenants.length
+      : activeTab === 'hospitals'
+        ? filteredTenants.length
+        : activeTab === 'admins'
+          ? filteredAdmins.length
+          : filteredAdminUsers.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage) || 1;
+
+  const hospitalTenantColumns: ColumnsType<HospitalTenant> = [
+    {
+      title: 'Hospital Name',
+      dataIndex: 'tenant_name',
+      key: 'tenant_name',
+      render: (name: string) => (
+        <Space>
+          <Avatar
+            size={26}
+            style={{ background: '#e0f2fe', color: '#0369a1', fontWeight: 700, fontSize: 11 }}
+          >
+            {name.charAt(0).toUpperCase()}
+          </Avatar>
+          <Text strong style={{ fontSize: 13, color: '#0f172a' }}>
+            {name}
+          </Text>
+        </Space>
+      ),
+    },
+    {
+      title: 'Tenant Code',
+      dataIndex: 'tenant_code',
+      key: 'tenant_code',
+      render: (code: string) => (
+        <Tag color="cyan" style={{ fontFamily: 'monospace', fontWeight: 600, fontSize: 11 }}>
+          {code}
+        </Tag>
+      ),
+    },
+    {
+      title: 'Email',
+      dataIndex: 'email',
+      key: 'email',
+      render: (email: string | null) =>
+        email ? (
+          <a href={`mailto:${email}`} style={{ fontSize: 12, color: '#2563eb' }}>
+            {email}
+          </a>
+        ) : (
+          <Text style={{ color: '#94a3b8', fontSize: 12 }}>—</Text>
+        ),
+    },
+    {
+      title: 'Phone',
+      dataIndex: 'phone',
+      key: 'phone',
+      render: (phone: string | null) =>
+        phone ? (
+          <Text style={{ fontSize: 12, color: '#334155' }}>{phone}</Text>
+        ) : (
+          <Text style={{ color: '#94a3b8', fontSize: 12 }}>—</Text>
+        ),
+    },
+    {
+      title: 'Address',
+      dataIndex: 'address',
+      key: 'address',
+      ellipsis: true,
+      render: (addr: string | null) =>
+        addr ? (
+          <Tooltip title={addr}>
+            <Text style={{ fontSize: 12, color: '#64748b' }}>{addr}</Text>
+          </Tooltip>
+        ) : (
+          <Text style={{ color: '#94a3b8', fontSize: 12 }}>—</Text>
+        ),
+    },
+    {
+      title: 'Status',
+      dataIndex: 'status',
+      key: 'status',
+      render: (status: 'ACTIVE' | 'INACTIVE') => (
+        <Badge
+          status={status === 'ACTIVE' ? 'success' : 'error'}
+          text={
+            <span
+              style={{
+                fontSize: 11,
+                fontWeight: 600,
+                color: status === 'ACTIVE' ? '#16a34a' : '#dc2626',
+              }}
+            >
+              {status}
+            </span>
+          }
+        />
+      ),
+    },
+    {
+      title: 'Created Date',
+      dataIndex: 'created_at',
+      key: 'created_at',
+      render: (v: string) => (
+        <Text style={{ fontSize: 11, color: '#64748b' }}>
+          {new Date(v).toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+      ),
+    },
+    {
+      title: 'Updated Date',
+      dataIndex: 'updated_at',
+      key: 'updated_at',
+      render: (v: string) => (
+        <Text style={{ fontSize: 11, color: '#64748b' }}>
+          {new Date(v).toLocaleDateString(undefined, {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+          })}
+        </Text>
+      ),
+    },
+    {
+      title: 'Actions',
+      key: 'actions',
+      align: 'right',
+      render: (_: any, record: HospitalTenant) => (
+        <Space size={4}>
+          <Tooltip title="View Details">
+            <Button
+              type="text"
+              size="small"
+              icon={<EyeOutlined style={{ color: '#0284c7' }} />}
+              onClick={() => {
+                setSelectedHospitalTenant(record);
+                setIsViewTenantDrawerOpen(true);
+              }}
+            />
+          </Tooltip>
+          {record.email && (
+            <Tooltip title="Resend Welcome Email">
+              <Button
+                type="text"
+                size="small"
+                icon={<MailOutlined style={{ color: '#059669' }} />}
+                onClick={async () => {
+                  try {
+                    message.loading({ content: 'Sending welcome email...', key: 'resend-mail' });
+                    await apiClient.post(`/master/hospital-tenants/${record.id}/resend-welcome-email`);
+                    message.success({ content: `Welcome email sent to ${record.email}`, key: 'resend-mail' });
+                  } catch (err: any) {
+                    message.error({
+                      content: err?.response?.data?.error || 'Failed to send welcome email',
+                      key: 'resend-mail',
+                    });
+                  }
+                }}
+              />
+            </Tooltip>
+          )}
+          <Tooltip title="Edit">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined style={{ color: '#d97706' }} />}
+              onClick={() => {
+                setSelectedHospitalTenant(record);
+                editTenantDrawerForm.setFieldsValue({
+                  tenant_name: record.tenant_name,
+                  email: record.email || '',
+                  phone: record.phone || '',
+                  address_line1: record.address_line1 || '',
+                  address_line2: record.address_line2 || '',
+                  city: record.city || '',
+                  state: record.state || '',
+                  pincode: record.pincode || '',
+                  status: record.status,
+                });
+                setIsEditTenantDrawerOpen(true);
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="Delete">
+            <Button
+              type="text"
+              size="small"
+              icon={<DeleteOutlined />}
+              danger
+              onClick={() => handleDeleteHospitalTenant(record)}
+            />
+          </Tooltip>
+        </Space>
+      ),
+    },
+  ];
 
   const hospitalColumns: ColumnsType<Tenant> = [
     {
@@ -709,23 +1063,28 @@ export function MasterDashboard() {
   const masterRole = localStorage.getItem('hms_master_role') || 'Super Admin';
 
   const navItems = [
+    { key: 'tenants' as const, icon: <ApartmentOutlined />, label: 'Tenants' },
     { key: 'hospitals' as const, icon: <BankOutlined />, label: 'Hospitals & DBs' },
     { key: 'admins' as const, icon: <LockOutlined />, label: 'Admin Logins' },
     { key: 'admin_users' as const, icon: <TeamOutlined />, label: 'Master Users' },
   ];
 
   const activeData =
-    activeTab === 'hospitals'
-      ? filteredTenants
-      : activeTab === 'admins'
-        ? filteredAdmins
-        : filteredAdminUsers;
+    activeTab === 'tenants'
+      ? filteredHospitalTenants
+      : activeTab === 'hospitals'
+        ? filteredTenants
+        : activeTab === 'admins'
+          ? filteredAdmins
+          : filteredAdminUsers;
   const activeColumns =
-    activeTab === 'hospitals'
-      ? hospitalColumns
-      : activeTab === 'admins'
-        ? (adminColumns as any)
-        : (adminUserColumns as any);
+    activeTab === 'tenants'
+      ? (hospitalTenantColumns as any)
+      : activeTab === 'hospitals'
+        ? hospitalColumns
+        : activeTab === 'admins'
+          ? (adminColumns as any)
+          : (adminUserColumns as any);
   const paginatedData = (activeData as any[]).slice(
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage,
@@ -739,21 +1098,46 @@ export function MasterDashboard() {
     fontWeight: 600,
   };
 
+  const responsiveModalWidth = isMobile ? '92%' : 460;
+  const responsiveDrawerWidth = isMobile ? '100%' : isTablet ? 440 : 480;
+  const responsiveTenantDrawerWidth = isMobile ? '100%' : isTablet ? 460 : 520;
+
   return (
-    <div style={{ display: 'flex', height: '100vh', background: '#F8FAFC', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', height: '100vh', background: '#F8FAFC', overflow: 'hidden', position: 'relative' }}>
+      {/* MOBILE BACKDROP OVERLAY */}
+      {isMobile && isSidebarOpen && (
+        <div
+          onClick={() => setIsSidebarOpen(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(15, 23, 42, 0.45)',
+            backdropFilter: 'blur(3px)',
+            zIndex: 998,
+            transition: 'opacity 0.2s',
+          }}
+        />
+      )}
+
       {/* SIDEBAR */}
       <aside
         style={{
-          width: isSidebarOpen ? 256 : 80,
+          width: isMobile ? 260 : isSidebarOpen ? 256 : 80,
           background: '#fff',
           borderRight: '1px solid #e2e8f0',
-          display: 'flex',
+          display: isMobile && !isSidebarOpen ? 'none' : 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
           flexShrink: 0,
-          transition: 'width 0.25s',
-          zIndex: 20,
-          boxShadow: '1px 0 6px rgba(0,0,0,0.04)',
+          transition: isMobile ? 'transform 0.25s ease' : 'width 0.25s ease',
+          position: isMobile ? 'fixed' : 'relative',
+          top: 0,
+          left: 0,
+          bottom: 0,
+          zIndex: isMobile ? 999 : 20,
+          boxShadow: isMobile
+            ? '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.04)'
+            : '1px 0 6px rgba(0,0,0,0.04)',
         }}
       >
         <div>
@@ -764,10 +1148,10 @@ export function MasterDashboard() {
               alignItems: 'center',
               borderBottom: '1px solid #f1f5f9',
               padding: '0 16px',
-              justifyContent: isSidebarOpen ? 'space-between' : 'center',
+              justifyContent: isSidebarOpen || isMobile ? 'space-between' : 'center',
             }}
           >
-            {isSidebarOpen && (
+            {(isSidebarOpen || isMobile) && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                 <div
                   style={{
@@ -788,12 +1172,21 @@ export function MasterDashboard() {
                 <span style={{ fontWeight: 700, fontSize: 16, color: '#0f172a' }}>HMS Master</span>
               </div>
             )}
-            <Button
-              type="text"
-              size="small"
-              icon={<MenuOutlined style={{ color: '#94a3b8' }} />}
-              onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            />
+            {isMobile ? (
+              <Button
+                type="text"
+                size="small"
+                icon={<CloseOutlined style={{ color: '#64748b', fontSize: 16 }} />}
+                onClick={() => setIsSidebarOpen(false)}
+              />
+            ) : (
+              <Button
+                type="text"
+                size="small"
+                icon={<MenuOutlined style={{ color: '#94a3b8' }} />}
+                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+              />
+            )}
           </div>
           <div style={{ padding: '20px 12px', display: 'flex', flexDirection: 'column', gap: 4 }}>
             {navItems.map((item) => {
@@ -801,13 +1194,16 @@ export function MasterDashboard() {
               return (
                 <button
                   key={item.key}
-                  onClick={() => setActiveTab(item.key)}
+                  onClick={() => {
+                    setActiveTab(item.key);
+                    if (isMobile) setIsSidebarOpen(false);
+                  }}
                   style={{
                     display: 'flex',
                     alignItems: 'center',
                     gap: 10,
-                    padding: isSidebarOpen ? '10px 14px' : '10px 0',
-                    justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+                    padding: isSidebarOpen || isMobile ? '10px 14px' : '10px 0',
+                    justifyContent: isSidebarOpen || isMobile ? 'flex-start' : 'center',
                     border: 'none',
                     borderRight: isActive ? '2px solid #0891b2' : '2px solid transparent',
                     borderRadius: 0,
@@ -822,14 +1218,14 @@ export function MasterDashboard() {
                   }}
                 >
                   <span style={{ fontSize: 16 }}>{item.icon}</span>
-                  {isSidebarOpen && <span>{item.label}</span>}
+                  {(isSidebarOpen || isMobile) && <span>{item.label}</span>}
                 </button>
               );
             })}
           </div>
         </div>
         <div style={{ padding: 16, borderTop: '1px solid #f1f5f9' }}>
-          {isSidebarOpen ? (
+          {isSidebarOpen || isMobile ? (
             <div
               style={{
                 display: 'flex',
@@ -878,32 +1274,42 @@ export function MasterDashboard() {
               color: '#f43f5e',
               fontWeight: 600,
               fontSize: 13,
-              justifyContent: isSidebarOpen ? 'flex-start' : 'center',
+              justifyContent: isSidebarOpen || isMobile ? 'flex-start' : 'center',
               display: 'flex',
               alignItems: 'center',
             }}
           >
-            {isSidebarOpen && 'Sign Out'}
+            {(isSidebarOpen || isMobile) && 'Sign Out'}
           </Button>
         </div>
       </aside>
 
       {/* MAIN */}
-      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <main style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, overflow: 'hidden' }}>
         {/* HEADER */}
         <header
           style={{
             background: '#fff',
             borderBottom: '1px solid #e2e8f0',
-            height: 56,
-            padding: '0 24px',
+            minHeight: 56,
+            padding: isMobile ? '10px 14px' : '0 24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexShrink: 0,
+            gap: 8,
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, overflow: 'hidden' }}>
+            {isMobile && (
+              <Button
+                type="text"
+                size="middle"
+                icon={<MenuOutlined style={{ color: '#0f172a', fontSize: 16 }} />}
+                onClick={() => setIsSidebarOpen(true)}
+                style={{ padding: '4px 6px', marginLeft: -4, flexShrink: 0 }}
+              />
+            )}
             <div
               style={{
                 width: 26,
@@ -913,6 +1319,7 @@ export function MasterDashboard() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
+                flexShrink: 0,
               }}
             >
               <svg
@@ -928,32 +1335,65 @@ export function MasterDashboard() {
                 <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
               </svg>
             </div>
-            <span style={{ fontWeight: 700, fontSize: 13, color: '#0f172a' }}>
-              {activeTab === 'hospitals'
-                ? 'Hospitals & DBs'
-                : activeTab === 'admins'
-                  ? 'Admin Logins'
-                  : 'Master Users'}
+            <span style={{ fontWeight: 700, fontSize: isMobile ? 14 : 15, color: '#0f172a', whiteSpace: 'nowrap' }}>
+              {activeTab === 'tenants'
+                ? 'Tenants'
+                : activeTab === 'hospitals'
+                  ? 'Hospitals & DBs'
+                  : activeTab === 'admins'
+                    ? 'Admin Logins'
+                    : 'Master Users'}
             </span>
-            <span style={{ color: '#cbd5e1' }}>|</span>
-            <span style={{ fontSize: 11, color: '#94a3b8' }}>
-              {activeTab === 'hospitals'
-                ? 'Manage all provisioned hospital instances.'
-                : activeTab === 'admins'
-                  ? 'Manage Master Admin credentials for hospitals.'
-                  : 'Manage platform-level master user accounts.'}
-            </span>
+            {!isMobile && (
+              <>
+                <span style={{ color: '#cbd5e1' }}>|</span>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: '#94a3b8',
+                    whiteSpace: 'nowrap',
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                  }}
+                >
+                  {activeTab === 'tenants'
+                    ? 'Manage registered hospital tenants and their information.'
+                    : activeTab === 'hospitals'
+                      ? 'Manage all provisioned hospital instances.'
+                      : activeTab === 'admins'
+                        ? 'Manage Master Admin credentials for hospitals.'
+                        : 'Manage platform-level master user accounts.'}
+                </span>
+              </>
+            )}
           </div>
-          <Space size={12}>
-            <Input
-              placeholder="Search..."
-              prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 14 }} />}
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              allowClear
-              size="middle"
-              style={{ width: 280, fontSize: 14 }}
-            />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+            {!isMobile && (
+              <Input
+                placeholder="Search..."
+                prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 13 }} />}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                allowClear
+                size="middle"
+                style={{ width: isTablet ? 170 : 260, fontSize: 13 }}
+              />
+            )}
+            {activeTab === 'tenants' && (
+              <Button
+                type="primary"
+                size="middle"
+                icon={<PlusOutlined />}
+                onClick={() => {
+                  createTenantDrawerForm.resetFields();
+                  createTenantDrawerForm.setFieldsValue({ status: 'ACTIVE' });
+                  setIsCreateTenantDrawerOpen(true);
+                }}
+                style={{ ...btnStyle, padding: isMobile ? '0 10px' : '0 16px' }}
+              >
+                {isMobile ? 'New' : 'New Tenant'}
+              </Button>
+            )}
             {activeTab === 'hospitals' && (
               <Button
                 type="primary"
@@ -964,9 +1404,9 @@ export function MasterDashboard() {
                   provisionForm.setFieldsValue({ status: 'ACTIVE' });
                   setIsProvisionModalOpen(true);
                 }}
-                style={btnStyle}
+                style={{ ...btnStyle, padding: isMobile ? '0 10px' : '0 16px' }}
               >
-                New Hospital
+                {isMobile ? 'New' : 'New Hospital'}
               </Button>
             )}
             {activeTab === 'admins' && (
@@ -975,9 +1415,9 @@ export function MasterDashboard() {
                 size="middle"
                 icon={<PlusOutlined />}
                 onClick={openCreateAdmin}
-                style={btnStyle}
+                style={{ ...btnStyle, padding: isMobile ? '0 10px' : '0 16px' }}
               >
-                New Admin
+                {isMobile ? 'New' : 'New Admin'}
               </Button>
             )}
             {activeTab === 'admin_users' && (
@@ -986,12 +1426,12 @@ export function MasterDashboard() {
                 size="middle"
                 icon={<PlusOutlined />}
                 onClick={openCreateAdminUser}
-                style={btnStyle}
+                style={{ ...btnStyle, padding: isMobile ? '0 10px' : '0 16px' }}
               >
-                New Member
+                {isMobile ? 'New' : 'New Member'}
               </Button>
             )}
-          </Space>
+          </div>
         </header>
 
         {/* FILTER BAR */}
@@ -999,18 +1439,32 @@ export function MasterDashboard() {
           style={{
             background: '#fff',
             borderBottom: '1px solid #e2e8f0',
-            padding: '10px 24px',
+            padding: isMobile ? '8px 14px' : '10px 24px',
             display: 'flex',
             alignItems: 'center',
-            gap: 12,
+            gap: 8,
             flexShrink: 0,
+            flexWrap: isMobile ? 'wrap' : 'nowrap',
           }}
         >
+          {isMobile && (
+            <div style={{ width: '100%', marginBottom: 4 }}>
+              <Input
+                placeholder="Search..."
+                prefix={<SearchOutlined style={{ color: '#94a3b8', fontSize: 13 }} />}
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                allowClear
+                size="middle"
+                style={{ width: '100%', fontSize: 13 }}
+              />
+            </div>
+          )}
           <Select
             value={filterStatus}
             onChange={(val) => setFilterStatus(val)}
             size="middle"
-            style={{ width: 160, fontSize: 13 }}
+            style={{ width: isMobile ? 130 : 160, fontSize: 13 }}
           >
             <Option value="ALL">All Statuses</Option>
             <Option value="ACTIVE">Active</Option>
@@ -1031,12 +1485,19 @@ export function MasterDashboard() {
         </div>
 
         {/* TABLE */}
-        <div style={{ flex: 1, overflow: 'auto', padding: 24, background: '#F8FAFC' }}>
+        <div
+          style={{
+            flex: 1,
+            overflow: 'auto',
+            padding: isMobile ? '10px 8px' : isTablet ? '16px' : '20px 24px',
+            background: '#F8FAFC',
+          }}
+        >
           <div
             style={{
               background: '#fff',
               border: '1px solid #e2e8f0',
-              borderRadius: 4,
+              borderRadius: 6,
               overflow: 'hidden',
             }}
           >
@@ -1044,9 +1505,16 @@ export function MasterDashboard() {
               columns={activeColumns}
               dataSource={paginatedData}
               rowKey={activeTab === 'admins' ? 'admin_id' : 'id'}
-              loading={loading || adminUsersLoading}
+              loading={
+                activeTab === 'tenants'
+                  ? hospitalTenantsLoading
+                  : activeTab === 'admin_users'
+                    ? adminUsersLoading
+                    : loading
+              }
               size="small"
               pagination={false}
+              scroll={{ x: activeTab === 'tenants' ? 980 : activeTab === 'admins' ? 760 : 700 }}
               rowSelection={{ type: 'checkbox' }}
             />
           </div>
@@ -1057,11 +1525,13 @@ export function MasterDashboard() {
           style={{
             background: '#fff',
             borderTop: '1px solid #e2e8f0',
-            padding: '8px 24px',
+            padding: isMobile ? '8px 12px' : '8px 24px',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexShrink: 0,
+            flexWrap: isMobile ? 'wrap' : 'nowrap',
+            gap: 8,
             boxShadow: '0 -4px 6px -1px rgba(0,0,0,0.04)',
           }}
         >
@@ -1070,14 +1540,16 @@ export function MasterDashboard() {
             {Math.min(currentPage * itemsPerPage, totalItems)} of {totalItems} entries
           </Text>
           <Space size={4}>
-            <Button
-              size="small"
-              onClick={() => setCurrentPage(1)}
-              disabled={currentPage === 1}
-              style={{ fontSize: 11 }}
-            >
-              « First
-            </Button>
+            {!isMobile && (
+              <Button
+                size="small"
+                onClick={() => setCurrentPage(1)}
+                disabled={currentPage === 1}
+                style={{ fontSize: 11 }}
+              >
+                « First
+              </Button>
+            )}
             <Button
               size="small"
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
@@ -1086,8 +1558,8 @@ export function MasterDashboard() {
             >
               ‹ Prev
             </Button>
-            <span style={{ fontSize: 11, color: '#64748b', padding: '0 8px' }}>
-              Page {currentPage} of {totalPages}
+            <span style={{ fontSize: 11, color: '#64748b', padding: '0 6px' }}>
+              {currentPage} / {totalPages}
             </span>
             <Button
               size="small"
@@ -1097,14 +1569,16 @@ export function MasterDashboard() {
             >
               Next ›
             </Button>
-            <Button
-              size="small"
-              onClick={() => setCurrentPage(totalPages)}
-              disabled={currentPage >= totalPages}
-              style={{ fontSize: 11 }}
-            >
-              Last »
-            </Button>
+            {!isMobile && (
+              <Button
+                size="small"
+                onClick={() => setCurrentPage(totalPages)}
+                disabled={currentPage >= totalPages}
+                style={{ fontSize: 11 }}
+              >
+                Last »
+              </Button>
+            )}
           </Space>
         </div>
       </main>
@@ -1116,7 +1590,7 @@ export function MasterDashboard() {
         open={isProvisionModalOpen}
         onCancel={() => setIsProvisionModalOpen(false)}
         footer={null}
-        width={460}
+        width={responsiveModalWidth}
       >
         <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
           Create a new tenant and initialize their isolated database.
@@ -1186,7 +1660,7 @@ export function MasterDashboard() {
         }
         open={isCreateAdminDrawerOpen}
         onClose={() => setIsCreateAdminDrawerOpen(false)}
-        width={460}
+        width={responsiveDrawerWidth}
         destroyOnHidden
         styles={{
           header: { borderBottom: '1px solid #f1f5f9', padding: '16px 20px' },
@@ -1280,7 +1754,7 @@ export function MasterDashboard() {
         open={!!editingAdmin}
         onCancel={() => setEditingAdmin(null)}
         footer={null}
-        width={480}
+        width={responsiveModalWidth}
       >
         {editingAdmin && (
           <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
@@ -1350,7 +1824,7 @@ export function MasterDashboard() {
         open={!!editingTenant}
         onCancel={() => setEditingTenant(null)}
         footer={null}
-        width={400}
+        width={isMobile ? '92%' : 400}
       >
         <Form
           form={editTenantForm}
@@ -1390,7 +1864,7 @@ export function MasterDashboard() {
         open={isAdminUserModalOpen}
         onCancel={() => setIsAdminUserModalOpen(false)}
         footer={null}
-        width={480}
+        width={responsiveModalWidth}
       >
         <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
           {editingAdminUser ? 'Update master user details.' : 'Create a new platform master user.'}
@@ -1449,6 +1923,346 @@ export function MasterDashboard() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* CREATE HOSPITAL TENANT DRAWER */}
+      <Drawer
+        title="🏥 Add New Tenant"
+        open={isCreateTenantDrawerOpen}
+        onClose={() => setIsCreateTenantDrawerOpen(false)}
+        width={responsiveTenantDrawerWidth}
+      >
+        <p style={{ color: '#64748b', fontSize: 13, marginBottom: 20 }}>
+          Register a new hospital tenant profile.
+        </p>
+        <Form form={createTenantDrawerForm} layout="vertical" onFinish={handleCreateHospitalTenant}>
+          <Form.Item
+            label="Hospital Name"
+            name="tenant_name"
+            rules={[{ required: true, message: 'Please enter hospital name' }]}
+          >
+            <Input placeholder="e.g. Apollo Medical Center" />
+          </Form.Item>
+          <Form.Item
+            label="Tenant Code"
+            name="tenant_code"
+            tooltip="Unique code (e.g. T-APOLLO). Leave blank to auto-generate."
+          >
+            <Input placeholder="Auto-generated if left blank (e.g. T-A1B2C3)" />
+          </Form.Item>
+          <Form.Item
+            label="Email"
+            name="email"
+            rules={[{ type: 'email', message: 'Please enter a valid email address' }]}
+          >
+            <Input placeholder="e.g. contact@apollo.com" />
+          </Form.Item>
+          <Form.Item label="Phone" name="phone">
+            <Input placeholder="e.g. +91 98765 43210" />
+          </Form.Item>
+          <Form.Item label="Address Line 1" name="address_line1">
+            <Input placeholder="Building, Street, Flat / House No." />
+          </Form.Item>
+          <Form.Item label="Address Line 2" name="address_line2">
+            <Input placeholder="Area, Landmark, Colony (Optional)" />
+          </Form.Item>
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+            <Form.Item label="City" name="city">
+              <Input placeholder="City / District" />
+            </Form.Item>
+            <Form.Item label="State" name="state">
+              <Input placeholder="State" />
+            </Form.Item>
+          </div>
+          <Form.Item label="Pincode" name="pincode">
+            <Input placeholder="Postal code / PIN (e.g. 600001)" />
+          </Form.Item>
+          <Form.Item label="Status" name="status" initialValue="ACTIVE">
+            <Select>
+              <Option value="ACTIVE">ACTIVE</Option>
+              <Option value="INACTIVE">INACTIVE</Option>
+            </Select>
+          </Form.Item>
+          <Form.Item style={{ marginTop: 24, marginBottom: 0 }}>
+            <Button
+              type="primary"
+              htmlType="submit"
+              block
+              loading={isSubmittingTenant}
+              style={{ ...btnStyle, height: 42 }}
+            >
+              Create Tenant
+            </Button>
+          </Form.Item>
+        </Form>
+      </Drawer>
+
+      {/* EDIT HOSPITAL TENANT DRAWER */}
+      <Drawer
+        title="✏️ Edit Tenant"
+        open={isEditTenantDrawerOpen}
+        onClose={() => {
+          setIsEditTenantDrawerOpen(false);
+          setSelectedHospitalTenant(null);
+        }}
+        width={responsiveTenantDrawerWidth}
+      >
+        {selectedHospitalTenant && (
+          <Form form={editTenantDrawerForm} layout="vertical" onFinish={handleUpdateHospitalTenant}>
+            <div
+              style={{
+                background: '#f8fafc',
+                border: '1px solid #e2e8f0',
+                padding: '12px 16px',
+                borderRadius: 6,
+                marginBottom: 16,
+              }}
+            >
+              <div style={{ fontSize: 11, color: '#64748b' }}>
+                Tenant ID: <span style={{ fontFamily: 'monospace' }}>{selectedHospitalTenant.id}</span>
+              </div>
+              <div style={{ fontSize: 11, color: '#64748b', marginTop: 4 }}>
+                Tenant Code:{' '}
+                <Tag color="cyan" style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                  {selectedHospitalTenant.tenant_code}
+                </Tag>
+              </div>
+            </div>
+            <Form.Item
+              label="Hospital Name"
+              name="tenant_name"
+              rules={[{ required: true, message: 'Please enter hospital name' }]}
+            >
+              <Input placeholder="Hospital name" />
+            </Form.Item>
+            <Form.Item
+              label="Email"
+              name="email"
+              rules={[{ type: 'email', message: 'Please enter a valid email address' }]}
+            >
+              <Input placeholder="Hospital contact email" />
+            </Form.Item>
+            <Form.Item label="Phone" name="phone">
+              <Input placeholder="Hospital contact phone" />
+            </Form.Item>
+            <Form.Item label="Address Line 1" name="address_line1">
+              <Input placeholder="Building, Street, Flat / House No." />
+            </Form.Item>
+            <Form.Item label="Address Line 2" name="address_line2">
+              <Input placeholder="Area, Landmark, Colony (Optional)" />
+            </Form.Item>
+            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 12 }}>
+              <Form.Item label="City" name="city">
+                <Input placeholder="City / District" />
+              </Form.Item>
+              <Form.Item label="State" name="state">
+                <Input placeholder="State" />
+              </Form.Item>
+            </div>
+            <Form.Item label="Pincode" name="pincode">
+              <Input placeholder="Postal code / PIN (e.g. 600001)" />
+            </Form.Item>
+            <Form.Item label="Status" name="status">
+              <Select>
+                <Option value="ACTIVE">ACTIVE</Option>
+                <Option value="INACTIVE">INACTIVE</Option>
+              </Select>
+            </Form.Item>
+            <Form.Item style={{ marginTop: 24, marginBottom: 0 }}>
+              <Button
+                type="primary"
+                htmlType="submit"
+                block
+                loading={isSubmittingTenant}
+                style={{ ...btnStyle, height: 42 }}
+              >
+                Save Changes
+              </Button>
+            </Form.Item>
+          </Form>
+        )}
+      </Drawer>
+
+      {/* VIEW HOSPITAL TENANT DETAILS DRAWER */}
+      <Drawer
+        title="📋 Tenant Details"
+        open={isViewTenantDrawerOpen}
+        onClose={() => {
+          setIsViewTenantDrawerOpen(false);
+          setSelectedHospitalTenant(null);
+        }}
+        width={responsiveDrawerWidth}
+      >
+        {selectedHospitalTenant && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div
+              style={{
+                padding: 16,
+                background: '#f0fdf4',
+                borderRadius: 8,
+                border: '1px solid #bbf7d0',
+              }}
+            >
+              <Text strong style={{ fontSize: 16, color: '#166534' }}>
+                {selectedHospitalTenant.tenant_name}
+              </Text>
+              <div style={{ marginTop: 6, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <Tag color="cyan" style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                  {selectedHospitalTenant.tenant_code}
+                </Tag>
+                <Tag color={selectedHospitalTenant.status === 'ACTIVE' ? 'green' : 'red'}>
+                  {selectedHospitalTenant.status}
+                </Tag>
+              </div>
+            </div>
+
+            <div
+              style={{
+                border: '1px solid #e2e8f0',
+                borderRadius: 8,
+                padding: 16,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+              }}
+            >
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Tenant ID
+                </Text>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                  <Text code style={{ fontSize: 12 }}>
+                    {selectedHospitalTenant.id}
+                  </Text>
+                  <Tooltip title="Copy Tenant ID">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        void navigator.clipboard.writeText(selectedHospitalTenant.id);
+                        message.success('Copied Tenant ID');
+                      }}
+                    />
+                  </Tooltip>
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Hospital Name
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13, fontWeight: 600, color: '#0f172a' }}>
+                  {selectedHospitalTenant.tenant_name}
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Tenant Code
+                </Text>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+                  <Tag color="cyan" style={{ fontFamily: 'monospace', fontWeight: 600 }}>
+                    {selectedHospitalTenant.tenant_code}
+                  </Tag>
+                  <Tooltip title="Copy Tenant Code">
+                    <Button
+                      size="small"
+                      type="text"
+                      icon={<CopyOutlined />}
+                      onClick={() => {
+                        void navigator.clipboard.writeText(selectedHospitalTenant.tenant_code);
+                        message.success('Copied Tenant Code');
+                      }}
+                    />
+                  </Tooltip>
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Email
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13 }}>
+                  {selectedHospitalTenant.email ? (
+                    <a href={`mailto:${selectedHospitalTenant.email}`} style={{ color: '#2563eb' }}>
+                      {selectedHospitalTenant.email}
+                    </a>
+                  ) : (
+                    <Text type="secondary">—</Text>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Phone
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13 }}>
+                  {selectedHospitalTenant.phone || <Text type="secondary">—</Text>}
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Address
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13, display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {selectedHospitalTenant.address_line1 && (
+                    <div style={{ fontWeight: 500, color: '#0f172a' }}>
+                      {selectedHospitalTenant.address_line1}
+                    </div>
+                  )}
+                  {selectedHospitalTenant.address_line2 && (
+                    <div style={{ color: '#475569' }}>
+                      {selectedHospitalTenant.address_line2}
+                    </div>
+                  )}
+                  {(selectedHospitalTenant.city || selectedHospitalTenant.state || selectedHospitalTenant.pincode) && (
+                    <div style={{ color: '#334155' }}>
+                      {[selectedHospitalTenant.city, selectedHospitalTenant.state].filter(Boolean).join(', ')}
+                      {selectedHospitalTenant.pincode ? ` - ${selectedHospitalTenant.pincode}` : ''}
+                    </div>
+                  )}
+                  {!selectedHospitalTenant.address_line1 && !selectedHospitalTenant.city && (
+                    <div style={{ whiteSpace: 'pre-wrap' }}>
+                      {selectedHospitalTenant.address || <Text type="secondary">—</Text>}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Status
+                </Text>
+                <div style={{ marginTop: 4 }}>
+                  <Tag color={selectedHospitalTenant.status === 'ACTIVE' ? 'green' : 'red'}>
+                    {selectedHospitalTenant.status}
+                  </Tag>
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Created Date
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13, color: '#475569' }}>
+                  {new Date(selectedHospitalTenant.created_at).toLocaleString()}
+                </div>
+              </div>
+
+              <div>
+                <Text type="secondary" style={{ fontSize: 11, textTransform: 'uppercase', fontWeight: 600 }}>
+                  Updated Date
+                </Text>
+                <div style={{ marginTop: 4, fontSize: 13, color: '#475569' }}>
+                  {new Date(selectedHospitalTenant.updated_at).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 }

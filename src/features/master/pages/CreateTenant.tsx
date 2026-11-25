@@ -14,21 +14,28 @@ export function CreateTenant() {
   const [databaseName, setDatabaseName] = useState('');
   const [status, setStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [result, setResult] = useState<TenantResult | null>(null);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       const res = await apiClient.post('/master/tenants', {
-        tenantName,
-        databaseName,
+        tenantName: tenantName.trim(),
+        databaseName: databaseName.trim().toLowerCase(),
         status,
       });
       setResult(res.data.data);
-    } catch {
-      alert('Network error or failed to create hospital');
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.error ||
+        err?.response?.data?.details ||
+        err?.message ||
+        'Failed to create hospital';
+      setErrorMessage(msg);
     } finally {
       setIsSubmitting(false);
     }
@@ -36,37 +43,37 @@ export function CreateTenant() {
 
   if (result) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 sm:p-6">
         <div className="w-full max-w-2xl overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
-          <div className="bg-emerald-500 p-8 text-center">
-            <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-white text-3xl text-emerald-500 shadow-lg">
+          <div className="bg-emerald-500 p-6 sm:p-8 text-center">
+            <div className="mx-auto mb-4 flex h-14 w-14 sm:h-16 sm:w-16 items-center justify-center rounded-full bg-white text-2xl sm:text-3xl text-emerald-500 shadow-lg">
               ✓
             </div>
-            <h2 className="text-2xl font-bold text-white">Hospital Onboarded Successfully</h2>
-            <p className="mt-2 text-emerald-50">Database provisioned & migrations completed.</p>
+            <h2 className="text-xl sm:text-2xl font-bold text-white">Hospital Onboarded Successfully</h2>
+            <p className="mt-2 text-sm sm:text-base text-emerald-50">Database provisioned & migrations completed.</p>
           </div>
 
-          <div className="space-y-6 p-8">
-            <div className="grid grid-cols-2 gap-6 rounded-xl border border-slate-100 bg-slate-50 p-6">
+          <div className="space-y-6 p-5 sm:p-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6 rounded-xl border border-slate-100 bg-slate-50 p-4 sm:p-6">
               <div>
-                <p className="text-sm font-medium tracking-wider text-slate-500 uppercase">
+                <p className="text-xs sm:text-sm font-medium tracking-wider text-slate-500 uppercase">
                   Hospital Name
                 </p>
-                <p className="mt-1 text-lg font-semibold text-slate-900">{tenantName}</p>
+                <p className="mt-1 text-base sm:text-lg font-semibold text-slate-900 break-words">{tenantName}</p>
               </div>
               <div>
-                <p className="text-sm font-medium tracking-wider text-slate-500 uppercase">
+                <p className="text-xs sm:text-sm font-medium tracking-wider text-slate-500 uppercase">
                   Tenant Code
                 </p>
-                <p className="mt-1 font-mono text-lg font-bold text-indigo-600">
+                <p className="mt-1 font-mono text-base sm:text-lg font-bold text-indigo-600 break-words">
                   {result.tenantCode}
                 </p>
               </div>
-              <div className="col-span-2">
-                <p className="text-sm font-medium tracking-wider text-slate-500 uppercase">
+              <div className="col-span-1 sm:col-span-2">
+                <p className="text-xs sm:text-sm font-medium tracking-wider text-slate-500 uppercase">
                   Database Name
                 </p>
-                <p className="text-md mt-1 inline-block rounded border border-slate-200 bg-white p-2 font-mono text-slate-700">
+                <p className="text-sm sm:text-md mt-1 inline-block rounded border border-slate-200 bg-white p-2 font-mono text-slate-700 break-all">
                   {result.databaseName}
                 </p>
               </div>
@@ -77,7 +84,7 @@ export function CreateTenant() {
                 onClick={() => {
                   void navigate(ROUTES.home);
                 }}
-                className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-6 py-3 font-semibold text-slate-700 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50"
+                className="flex-1 rounded-xl border-2 border-slate-200 bg-white px-4 sm:px-6 py-3 font-semibold text-slate-700 transition-all duration-200 hover:border-slate-300 hover:bg-slate-50"
               >
                 Back to Dashboard
               </button>
@@ -89,7 +96,7 @@ export function CreateTenant() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 p-4 sm:p-6">
       <div className="flex w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-100 bg-white shadow-xl">
         {/* Left Side: Branding / Info */}
         <div className="hidden w-1/3 flex-col justify-between bg-indigo-600 p-8 text-white md:flex">
@@ -116,7 +123,7 @@ export function CreateTenant() {
         </div>
 
         {/* Right Side: Form */}
-        <div className="w-full p-8 md:w-2/3 md:p-12">
+        <div className="w-full p-5 sm:p-8 md:w-2/3 md:p-12">
           <button
             onClick={() => {
               void navigate(-1);
@@ -132,6 +139,13 @@ export function CreateTenant() {
             }}
             className="space-y-6"
           >
+            {errorMessage && (
+              <div className="flex items-start gap-3 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+                <span className="font-bold text-red-800">Error:</span>
+                <span className="flex-1 font-medium">{errorMessage}</span>
+              </div>
+            )}
+
             <div className="border-b border-slate-100 pb-6">
               <h3 className="mb-4 text-lg font-bold text-slate-800">Hospital Details</h3>
               <div className="mt-4 grid grid-cols-1 gap-6">
