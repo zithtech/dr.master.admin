@@ -11,6 +11,7 @@ export const ROUTES = {
   masterForgotPassword: '/master/forgot-password',
   masterResetPassword: '/master/reset-password',
   masterDashboard: '/master/dashboard',
+  tenants: '/master/tenants',
   createTenant: '/master/tenants/new',
   tenantLogin: '/t/:tenantCode/login',
   tenantDashboard: '/t/:tenantCode/dashboard',

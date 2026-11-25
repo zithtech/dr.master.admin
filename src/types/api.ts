@@ -72,3 +72,21 @@ export interface HealthResponse {
   uptimeSeconds: number;
   pool?: { total: number; idle: number; waiting: number };
 }
+
+export interface HospitalTenant {
+  id: string;
+  tenant_name: string;
+  tenant_code: string;
+  email: string | null;
+  phone: string | null;
+  address: string | null;
+  address_line1?: string | null;
+  address_line2?: string | null;
+  city?: string | null;
+  state?: string | null;
+  pincode?: string | null;
+  status: 'ACTIVE' | 'INACTIVE';
+  created_at: string;
+  updated_at: string;
+}
+

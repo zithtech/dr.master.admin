@@ -36,3 +36,9 @@ if (!globalThis.crypto.randomUUID) {
     randomUUID: () => '00000000-0000-4000-8000-000000000000',
   });
 }
+
+globalThis.ResizeObserver = class ResizeObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+};
